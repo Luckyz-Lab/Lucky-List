@@ -93,18 +93,18 @@ function SyncStatusIcon({ state, size }: { state: SyncState; size: number }) {
 
 function priorityClass(priority: TaskPriority) {
   return {
-    Low: "border-slate-300 bg-slate-500/10 text-slate-500",
-    Normal: "border-sky-300 bg-sky-500/10 text-sky-500",
-    High: "border-amber-300 bg-amber-500/10 text-amber-500",
-    Urgent: "border-rose-300 bg-rose-500/10 text-rose-500",
+    Low: "border-[var(--border)] bg-[var(--surface-strong)] text-[var(--muted)]",
+    Normal: "border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]",
+    High: "border-[var(--warning)] bg-[color-mix(in_oklab,var(--warning)_8%,transparent)] text-[var(--warning)]",
+    Urgent: "border-[var(--danger)] bg-[color-mix(in_oklab,var(--danger)_8%,transparent)] text-[var(--danger)]",
   }[priority];
 }
 
 function boardClass(state: BoardState) {
   return {
-    todo: "border-slate-300 bg-slate-500/10 text-slate-500",
-    wip: "border-indigo-300 bg-indigo-500/10 text-indigo-500",
-    done: "border-emerald-300 bg-emerald-500/10 text-emerald-500",
+    todo: "border-[var(--border)] bg-[var(--surface-strong)] text-[var(--muted)]",
+    wip: "border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]",
+    done: "border-[var(--success)] bg-[color-mix(in_oklab,var(--success)_8%,transparent)] text-[var(--success)]",
   }[state];
 }
 
@@ -253,7 +253,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--background)]">
         <Panel className="p-6 text-center">
-          <RefreshCcw className="mx-auto mb-3 animate-spin text-indigo-500" />
+          <RefreshCcw className="mx-auto mb-3 animate-spin text-[var(--foreground)]" />
           <p className="text-sm font-semibold">กำลังเปิด Lucky List...</p>
         </Panel>
       </div>
@@ -264,7 +264,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--background)] p-4">
         <Panel className="max-w-md p-7 text-center">
-          <ShieldCheck className="mx-auto mb-4 text-indigo-500" size={44} />
+          <ShieldCheck className="mx-auto mb-4 text-[var(--foreground)]" size={44} />
           <h1 className="text-2xl font-black">Lucky List ถูกล็อกไว้</h1>
           <p className="mt-2 text-sm text-[var(--muted)]">
             เข้าสู่ระบบ Supabase หรือเปิดโหมดส่วนตัวในเครื่องเพื่อใช้งานต่อ
@@ -282,7 +282,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
       <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
         <aside className="sticky top-0 hidden h-screen border-r border-[var(--border)] bg-[var(--surface)]/80 p-4 backdrop-blur lg:block">
           <div className="mb-8 flex items-center gap-3 px-2">
-            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-indigo-600 text-lg font-black text-white shadow-lg shadow-indigo-600/20">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--foreground)] bg-[var(--foreground)] text-lg font-black text-[var(--background)]">
               LL
             </div>
             <div>
@@ -301,7 +301,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-bold transition",
                     active
-                      ? "bg-indigo-600 text-white shadow-sm shadow-indigo-900/20"
+                      ? "bg-[var(--foreground)] text-[var(--background)]"
                       : "text-[var(--muted)] hover:bg-[var(--surface-strong)] hover:text-[var(--foreground)]",
                   )}
                 >
@@ -328,7 +328,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
           <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--background)]/88 px-4 py-3 backdrop-blur md:px-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-500">Lucky List</p>
+                <p className="text-xs font-bold uppercase text-[var(--muted)]">Lucky List</p>
                 <h1 className="text-xl font-black md:text-2xl">{navItems.find((item) => item.view === activeView)?.label}</h1>
               </div>
               <div className="flex items-center gap-2">
@@ -367,7 +367,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
       </div>
 
       {undoAction && (
-        <div className="fixed inset-x-3 bottom-20 z-50 mx-auto flex max-w-lg items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 shadow-xl shadow-black/15 lg:bottom-5">
+        <div className="fixed inset-x-3 bottom-20 z-50 mx-auto flex max-w-lg items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 lg:bottom-5">
           <span className="min-w-0 truncate text-sm font-bold">{undoAction.label}</span>
           <Button
             variant="secondary"
@@ -384,7 +384,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
       )}
 
       {moreOpen && (
-        <div className="fixed inset-x-3 bottom-20 z-50 grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 shadow-xl shadow-black/15 lg:hidden">
+        <div className="fixed inset-x-3 bottom-20 z-50 grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 lg:hidden">
           {moreMobileNav.map((item) => {
             const Icon = item.icon;
             return (
@@ -407,7 +407,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
           const Icon = item.icon;
           const active = item.view === activeView;
           return (
-            <Link key={item.view} href={item.href} onClick={() => setMoreOpen(false)} className={cn("flex min-h-12 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-bold", active ? "bg-indigo-600 text-white" : "text-[var(--muted)]")}>
+            <Link key={item.view} href={item.href} onClick={() => setMoreOpen(false)} className={cn("flex min-h-12 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-bold", active ? "bg-[var(--foreground)] text-[var(--background)]" : "text-[var(--muted)]")}>
               <Icon size={17} />
               {item.label}
             </Link>
@@ -417,7 +417,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
           onClick={() => setMoreOpen((value) => !value)}
           className={cn(
             "flex min-h-12 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-bold",
-            moreOpen || moreMobileNav.some((item) => item.view === activeView) ? "bg-indigo-600 text-white" : "text-[var(--muted)]",
+            moreOpen || moreMobileNav.some((item) => item.view === activeView) ? "bg-[var(--foreground)] text-[var(--background)]" : "text-[var(--muted)]",
           )}
         >
           <MoreHorizontal size={17} />
@@ -467,7 +467,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="flex items-center gap-2 text-lg font-black">
-                  <Target size={19} className="text-indigo-500" />
+                  <Target size={19} className="text-[var(--foreground)]" />
                   Focus Queue
                 </h2>
                 <p className="text-sm text-[var(--muted)]">Overdue, today, due soon, and urgent tasks are grouped here.</p>
@@ -489,7 +489,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
             <Panel className="p-5">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-lg font-black">
-                  <Clock size={19} className="text-amber-500" />
+                  <Clock size={19} className="text-[var(--warning)]" />
                   Today
                 </h2>
                 <span className="text-sm font-black text-[var(--muted)]">{todayTasks.length}</span>
@@ -505,7 +505,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
             <Panel className="p-5">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-lg font-black">
-                  <Zap size={19} className="text-emerald-500" />
+                  <Zap size={19} className="text-[var(--success)]" />
                   Recurring
                 </h2>
                 <span className="text-sm font-black text-[var(--muted)]">{recurringTasks.length}</span>
@@ -541,7 +541,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                 <h2 className="text-lg font-black">ภาพรวมสัปดาห์นี้</h2>
                 <p className="text-sm text-[var(--muted)]">งานที่เสร็จและงาน active ในเครื่อง</p>
               </div>
-              <span className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-500">
+              <span className="rounded-lg border border-[var(--success)] bg-[color-mix(in_oklab,var(--success)_8%,transparent)] px-3 py-1 text-xs font-black text-[var(--success)]">
                 Offline-ready
               </span>
             </div>
@@ -571,7 +571,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
           <Panel className="p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-black">Deadline Radar</h2>
-              <Bell className="text-rose-500" size={19} />
+              <Bell className="text-[var(--danger)]" size={19} />
             </div>
             <div className="grid gap-3">
               {soonTasks.slice(0, 6).map((task) => (
@@ -666,7 +666,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
           <div className="grid gap-3">
             {dated.map((task) => (
               <button key={task.id} onClick={() => openEdit(task)} className="grid gap-2 rounded-lg border border-[var(--border)] p-4 text-left transition hover:bg-[var(--surface-strong)] md:grid-cols-[130px_1fr_90px]">
-                <span className="text-sm font-black text-indigo-500">{formatThaiDate(task.dueAt)}</span>
+                <span className="text-sm font-black text-[var(--foreground)]">{formatThaiDate(task.dueAt)}</span>
                 <span>
                   <span className="block font-bold">{task.title}</span>
                   <span className="text-xs text-[var(--muted)]">{repeatLabel(task.repeatRule)}</span>
@@ -797,7 +797,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                   }
                   await saveSettings({ notificationsEnabled: enabled });
                 }}
-                className="h-5 w-5 accent-indigo-600"
+                className="h-5 w-5 accent-black dark:accent-white"
               />
             </label>
             <label className="grid gap-1 text-sm font-bold">
@@ -826,10 +826,10 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
 
 function StatCard({ title, value, detail, tone }: { title: string; value: number | string; detail: string; tone: "indigo" | "amber" | "rose" | "emerald" }) {
   const tones = {
-    indigo: "text-indigo-500 border-indigo-500/30 bg-indigo-500/10",
-    amber: "text-amber-500 border-amber-500/30 bg-amber-500/10",
-    rose: "text-rose-500 border-rose-500/30 bg-rose-500/10",
-    emerald: "text-emerald-500 border-emerald-500/30 bg-emerald-500/10",
+    indigo: "text-[var(--foreground)] border-[var(--border)] bg-[var(--surface-strong)]",
+    amber: "text-[var(--warning)] border-[var(--warning)] bg-[color-mix(in_oklab,var(--warning)_8%,transparent)]",
+    rose: "text-[var(--danger)] border-[var(--danger)] bg-[color-mix(in_oklab,var(--danger)_8%,transparent)]",
+    emerald: "text-[var(--success)] border-[var(--success)] bg-[color-mix(in_oklab,var(--success)_8%,transparent)]",
   };
   return (
     <Panel className="p-4">
@@ -864,7 +864,7 @@ function TaskMini({ task, onClick }: { task: Task; onClick: () => void }) {
         <span className={cn("rounded-md border px-2 py-0.5 text-[10px] font-black", priorityClass(task.priority))}>{priorityLabel(task.priority)}</span>
       </div>
       <div className="mt-3 flex items-center justify-between text-xs font-bold">
-        <span className={days !== null && days < 0 ? "text-rose-500" : "text-amber-500"}>
+        <span className={days !== null && days < 0 ? "text-[var(--danger)]" : "text-[var(--warning)]"}>
           {days === null ? "ไม่กำหนด" : days < 0 ? `เลย ${Math.abs(days)} วัน` : days === 0 ? "วันนี้" : `เหลือ ${days} วัน`}
         </span>
         <span>{task.progress}%</span>
@@ -906,8 +906,8 @@ function TaskCard({
           <span>{task.category || "ทั่วไป"}</span>
           <span>{task.progress}%</span>
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-          <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-400" style={{ width: `${task.progress}%` }} />
+        <div className="h-2 overflow-hidden rounded-full bg-[var(--surface-strong)]">
+          <div className="h-full rounded-full bg-[var(--foreground)]" style={{ width: `${task.progress}%` }} />
         </div>
       </div>
       {task.subtasks.length > 0 && (
@@ -937,7 +937,7 @@ function TaskCard({
         <button onClick={() => onArchive(task, true)} className="rounded-md bg-[var(--surface-strong)] px-2 py-1 text-[var(--muted)]">
           <Archive size={13} />
         </button>
-        <button onClick={() => onDelete(task)} className="rounded-md bg-rose-500/10 px-2 py-1 text-rose-500">
+        <button onClick={() => onDelete(task)} className="rounded-md bg-[color-mix(in_oklab,var(--danger)_8%,transparent)] px-2 py-1 text-[var(--danger)]">
           <Trash2 size={13} />
         </button>
       </div>
@@ -979,7 +979,7 @@ function TaskRow({
         <Button variant="ghost" className="h-8 px-2" onClick={() => onArchive(task, true)}>
           <Archive size={15} />
         </Button>
-        <Button variant="ghost" className="h-8 px-2 text-rose-500" onClick={() => onDelete(task)}>
+        <Button variant="ghost" className="h-8 px-2 text-[var(--danger)]" onClick={() => onDelete(task)}>
           <Trash2 size={15} />
         </Button>
       </div>

@@ -194,8 +194,8 @@ export function CommandPalette({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] bg-slate-950/65 p-3 backdrop-blur" role="dialog" aria-modal="true">
-      <div className="mx-auto mt-16 max-w-2xl overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-2xl shadow-black/30">
+    <div className="fixed inset-0 z-[60] bg-black/65 p-3 backdrop-blur" role="dialog" aria-modal="true">
+      <div className="mx-auto mt-16 max-w-2xl overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
         <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-3">
           <Search size={18} className="text-[var(--muted)]" />
           <input
@@ -235,10 +235,10 @@ export function CommandPalette({
               onClick={() => void execute(item)}
               className={cn(
                 "flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition",
-                index === safeIndex ? "bg-indigo-600 text-white" : "hover:bg-[var(--surface-strong)]",
+                index === safeIndex ? "bg-[var(--foreground)] text-[var(--background)]" : "hover:bg-[var(--surface-strong)]",
               )}
             >
-              <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg", index === safeIndex ? "bg-white/15" : "bg-[var(--surface-strong)] text-indigo-500")}>
+              <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg", index === safeIndex ? "bg-[color-mix(in_oklab,var(--background)_18%,transparent)]" : "bg-[var(--surface-strong)] text-[var(--foreground)]")}>
                 {item.icon}
               </span>
               <span className="min-w-0 flex-1">

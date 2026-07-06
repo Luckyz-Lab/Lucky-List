@@ -26,7 +26,7 @@ export function QuickAddBar({ onQuickAdd, className = "" }: { onQuickAdd: (text:
       <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
         <label className="grid gap-2">
           <span className="flex items-center gap-2 text-sm font-black">
-            <Sparkles size={17} className="text-indigo-500" />
+            <Sparkles size={17} className="text-[var(--foreground)]" />
             Quick Add
           </span>
           <input

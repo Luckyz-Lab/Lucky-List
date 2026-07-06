@@ -95,7 +95,7 @@ function TaskModalForm({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur">
       <div className="app-surface flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-[var(--surface)]">
         <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
           <div>
@@ -185,7 +185,7 @@ function TaskModalForm({
                 <div key={subtask.id} className="grid gap-2 rounded-lg bg-[var(--surface-strong)] p-3">
                   <div className="flex items-center gap-2">
                     <input className="focus-ring flex-1 bg-transparent text-sm font-semibold" value={subtask.title} onChange={(event) => setSubtasks((items) => items.map((item) => (item.id === subtask.id ? { ...item, title: event.target.value } : item)))} />
-                    <button onClick={() => setSubtasks((items) => items.filter((item) => item.id !== subtask.id))} className="rounded-md p-1 text-rose-400 hover:bg-rose-500/10">
+                    <button onClick={() => setSubtasks((items) => items.filter((item) => item.id !== subtask.id))} className="rounded-md p-1 text-[var(--danger)] hover:bg-[color-mix(in_oklab,var(--danger)_8%,transparent)]">
                       <Trash2 size={15} />
                     </button>
                   </div>

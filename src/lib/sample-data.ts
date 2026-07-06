@@ -5,7 +5,7 @@ const created = "2026-07-04T08:00:00.000Z";
 
 export const defaultSettings: UserSettings = {
   id: "settings_default",
-  theme: "dark",
+  theme: "light",
   deadlineThresholdDays: 3,
   categories: ["Project", "IT", "Marketing", "Personal", "Other"],
   notificationsEnabled: false,

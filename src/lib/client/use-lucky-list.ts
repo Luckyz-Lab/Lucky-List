@@ -70,7 +70,13 @@ export function useLuckyList() {
   }, [refresh]);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", settings.theme !== "light");
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      document.documentElement.classList.toggle("dark", settings.theme === "dark" || (settings.theme === "system" && media.matches));
+    };
+    applyTheme();
+    media.addEventListener("change", applyTheme);
+    return () => media.removeEventListener("change", applyTheme);
   }, [settings.theme]);
 
   const saveTask = useCallback(

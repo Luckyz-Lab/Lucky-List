@@ -44,7 +44,7 @@ export default function LoginPage() {
     <main className="grid min-h-screen place-items-center bg-[var(--background)] p-4">
       <Panel className="w-full max-w-md p-6">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-lg bg-indigo-600 text-white">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-lg border border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]">
             <ShieldCheck size={28} />
           </div>
           <h1 className="text-2xl font-black">เข้าสู่ Lucky List</h1>
@@ -67,7 +67,7 @@ export default function LoginPage() {
               <input className="focus-ring w-full rounded-lg border border-[var(--border)] bg-transparent py-2 pl-10 pr-3" value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="อย่างน้อย 6 ตัวอักษร" />
             </div>
           </label>
-          {message && <p className="rounded-lg bg-amber-500/10 p-3 text-sm font-semibold text-amber-500">{message}</p>}
+          {message && <p className="rounded-lg border border-[var(--warning)] bg-[color-mix(in_oklab,var(--warning)_8%,transparent)] p-3 text-sm font-semibold text-[var(--warning)]">{message}</p>}
           <div className="grid gap-2 sm:grid-cols-2">
             <Button disabled={loading || !email || !password || !hasSupabaseEnv()} onClick={() => signIn("signin")}>
               Login
