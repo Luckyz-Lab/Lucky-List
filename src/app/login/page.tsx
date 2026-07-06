@@ -7,6 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { createClient, hasSupabaseEnv } from "@/lib/supabase/client";
 
+function friendlyAuthMessage(message: string) {
+  const text = message.toLowerCase();
+  if (text.includes("rate limit") || text.includes("too many") || text.includes("429")) {
+    return "Supabase จำกัดการสมัครหรือส่งอีเมลชั่วคราว ลองใหม่อีกครั้งภายหลัง หรือเปิดโหมดส่วนตัวในเครื่องไปก่อน";
+  }
+  if (text.includes("email not confirmed")) {
+    return "บัญชียังไม่ได้ยืนยันอีเมล กรุณาเปิดอีเมลจาก Supabase แล้วกดยืนยันก่อน Login";
+  }
+  if (text.includes("invalid login credentials")) {
+    return "อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือบัญชียังไม่ได้สมัคร/ยืนยันอีเมล";
+  }
+  return message;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -26,10 +40,20 @@ export default function LoginPage() {
     const result =
       mode === "signin"
         ? await client.auth.signInWithPassword({ email, password })
-        : await client.auth.signUp({ email, password });
+        : await client.auth.signUp({
+            email,
+            password,
+            options: {
+              emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/login`,
+            },
+          });
     setLoading(false);
     if (result.error) {
-      setMessage(result.error.message);
+      setMessage(friendlyAuthMessage(result.error.message));
+      return;
+    }
+    if (mode === "signup" && !result.data.session) {
+      setMessage("สมัครสำเร็จแล้ว กรุณาเช็คอีเมลเพื่อยืนยันบัญชี จากนั้นกลับมา Login อีกครั้ง");
       return;
     }
     router.push("/app");
