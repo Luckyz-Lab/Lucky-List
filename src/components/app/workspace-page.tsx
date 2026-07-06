@@ -127,6 +127,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     loading,
     syncState,
     syncMessage,
+    syncConnected,
     isAuthed,
     saveTask,
     moveTask,
@@ -729,8 +730,9 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
         <Panel className="p-5">
           <h2 className="text-lg font-black">ระบบและ Sync</h2>
           <div className="mt-4 grid gap-3">
-            <SettingLine label="Sync backend" value={hasSupabaseEnv() ? "Supabase configured" : "Local PIN mode"} />
-            <SettingLine label="สถานะ Sync" value={syncMessage} />
+            <SettingLine label="Access mode" value="PIN local mode" />
+            <SettingLine label="Sync backend" value={syncConnected ? "Supabase connected" : hasSupabaseEnv() ? "Supabase optional" : "Local only"} />
+            <SettingLine label="สถานะ Sync" value={syncConnected ? syncMessage : "Local only"} />
             <SettingLine label="Offline DB" value="IndexedDB / Dexie" />
             <SettingLine label="Last backup" value={lastBackupAt ? formatThaiDate(lastBackupAt) : "Not yet"} />
             <SettingLine label="Notifications" value={reminders.permission} />

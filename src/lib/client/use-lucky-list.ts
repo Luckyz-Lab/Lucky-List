@@ -29,8 +29,9 @@ export function useLuckyList() {
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [syncState, setSyncState] = useState<SyncState>("idle");
-  const [syncMessage, setSyncMessage] = useState("Local mode");
+  const [syncMessage, setSyncMessage] = useState("PIN local mode");
   const [isAuthed, setIsAuthed] = useState(false);
+  const [syncConnected, setSyncConnected] = useState(false);
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -56,9 +57,17 @@ export function useLuckyList() {
       const privateSession = localStorage.getItem("lucky_private_session") === "true";
       if (client) {
         const { data } = await client.auth.getSession();
-        if (!cancelled) setIsAuthed(Boolean(data.session) || privateSession);
+        if (!cancelled) {
+          setSyncConnected(Boolean(data.session));
+          setIsAuthed(Boolean(data.session) || privateSession);
+          setSyncMessage(data.session ? "Supabase sync ready" : "PIN local mode");
+        }
       } else {
-        setIsAuthed(privateSession || !hasSupabaseEnv());
+        if (!cancelled) {
+          setSyncConnected(false);
+          setIsAuthed(privateSession || !hasSupabaseEnv());
+          setSyncMessage("PIN local mode");
+        }
       }
       await refresh();
       if (!cancelled) setLoading(false);
@@ -229,21 +238,24 @@ export function useLuckyList() {
     const client = createClient();
     if (!client) {
       setSyncState("idle");
-      setSyncMessage("Local mode - add Supabase env to sync");
+      setSyncMessage("PIN local mode - backup JSON for portability");
       return;
     }
     const { data } = await client.auth.getSession();
     if (!data.session?.user.id) {
       setSyncState("idle");
-      setSyncMessage("Sign in to sync");
+      setSyncConnected(false);
+      setSyncMessage("PIN local mode - Supabase sync optional");
       return;
     }
+    setSyncConnected(true);
     setSyncState("syncing");
     setSyncMessage("Syncing...");
     try {
       const result = await syncWithSupabase(client, data.session.user.id);
       await refresh();
       setSyncState("synced");
+      setSyncConnected(true);
       setSyncMessage(`Synced ${result.pushed} up / ${result.pulled} down`);
     } catch (error) {
       setSyncState("error");
@@ -359,6 +371,7 @@ export function useLuckyList() {
     loading,
     syncState,
     syncMessage,
+    syncConnected,
     isAuthed,
     saveTask,
     moveTask,
