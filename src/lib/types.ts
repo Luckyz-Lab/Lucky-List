@@ -2,7 +2,7 @@ export type TaskPriority = "Low" | "Normal" | "High" | "Urgent";
 export type BoardState = "todo" | "wip" | "done";
 export type RepeatFrequency = "none" | "daily" | "weekly" | "monthly";
 export type SyncState = "idle" | "offline" | "syncing" | "synced" | "error";
-export type AppView = "dashboard" | "board" | "tasks" | "calendar" | "archive" | "settings";
+export type AppView = "dashboard" | "focus" | "board" | "tasks" | "calendar" | "archive" | "settings";
 
 export interface RepeatRule {
   frequency: RepeatFrequency;

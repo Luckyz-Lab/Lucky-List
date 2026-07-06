@@ -10,6 +10,14 @@ const priorities: TaskPriority[] = ["Low", "Normal", "High", "Urgent"];
 const boards: BoardState[] = ["todo", "wip", "done"];
 const repeats: RepeatFrequency[] = ["none", "daily", "weekly", "monthly"];
 
+function toDateTimeLocal(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
 export function TaskModal(props: {
   task?: Task | null;
   categories: string[];
@@ -40,6 +48,7 @@ function TaskModalForm({
   const [boardState, setBoardState] = useState<BoardState>(task?.boardState ?? "todo");
   const [progress, setProgress] = useState(task?.progress ?? 0);
   const [dueAt, setDueAt] = useState(task?.dueAt?.slice(0, 10) ?? "");
+  const [reminderAt, setReminderAt] = useState(toDateTimeLocal(task?.reminderAt));
   const [repeat, setRepeat] = useState<RepeatFrequency>(task?.repeatRule.frequency ?? "none");
   const [subtasks, setSubtasks] = useState<Subtask[]>(task?.subtasks ?? []);
   const [subtaskTitle, setSubtaskTitle] = useState("");
@@ -73,6 +82,7 @@ function TaskModalForm({
       boardState,
       progress,
       dueAt: dueAt || null,
+      reminderAt: reminderAt ? new Date(reminderAt).toISOString() : null,
       repeatRule: { frequency: repeat },
       subtasks: subtasks.map((subtask, index) => ({
         ...subtask,
@@ -155,6 +165,10 @@ function TaskModalForm({
               </select>
             </label>
           </div>
+          <label className="grid gap-1 text-sm font-semibold">
+            Reminder
+            <input type="datetime-local" className="focus-ring rounded-lg border border-[var(--border)] bg-transparent px-3 py-2" value={reminderAt} onChange={(event) => setReminderAt(event.target.value)} />
+          </label>
           <div className="rounded-lg border border-[var(--border)] p-3">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-black">Subtasks</h3>

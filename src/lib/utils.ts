@@ -1,5 +1,5 @@
 import { clsx, type ClassValue } from "clsx";
-import { format, isAfter, isBefore, parseISO, startOfDay } from "date-fns";
+import { format, isAfter, isBefore, isSameDay, parseISO, startOfDay } from "date-fns";
 import { th } from "date-fns/locale";
 import { twMerge } from "tailwind-merge";
 import type { BoardState, RepeatRule, Task, TaskPriority } from "./types";
@@ -77,6 +77,16 @@ export function isDueSoon(task: Task, threshold: number) {
   return days !== null && days <= threshold && !isDoneTask(task);
 }
 
+export function isTodayTask(task: Task) {
+  if (isDoneTask(task)) return false;
+  const today = new Date();
+  return Boolean(
+    (task.dueAt && isSameDay(parseISO(task.dueAt), today)) ||
+      (task.startDate && isSameDay(parseISO(task.startDate), today)) ||
+      (task.reminderAt && isSameDay(parseISO(task.reminderAt), today)),
+  );
+}
+
 export function completedToday(task: Task) {
   if (!task.completedAt) return false;
   return isAfter(parseISO(task.completedAt), startOfDay(new Date()));
@@ -104,6 +114,8 @@ export function taskToCsvRow(task: Task) {
     boardLabel(task.boardState),
     task.startDate ?? "",
     task.dueAt ?? "",
+    task.reminderAt ?? "",
+    repeatLabel(task.repeatRule),
     task.completedAt ?? "",
     task.notes ?? "",
   ];

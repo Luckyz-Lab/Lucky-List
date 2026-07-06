@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { db } from "./local-db";
 import { enqueueSettings, enqueueTask, syncWithSupabase } from "./sync";
+import { parseImportFileText, type NormalizedImport } from "../importers";
+import { parseQuickAdd } from "../quick-add";
+import { createNextRecurringTask } from "../recurrence";
 import { createClient, hasSupabaseEnv } from "../supabase/client";
 import { createSeedTasks, defaultSettings } from "../sample-data";
-import type { BoardState, ImportPayload, Subtask, SyncState, Task, TaskPriority, UserSettings } from "../types";
+import type { BoardState, SyncState, Task, UserSettings } from "../types";
 import { downloadText, nowIso, taskToCsvRow, uid } from "../utils";
 
 function normalizeProgress(task: Task): Task {
@@ -28,6 +31,7 @@ export function useLuckyList() {
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncMessage, setSyncMessage] = useState("Local mode");
   const [isAuthed, setIsAuthed] = useState(false);
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const [localTasks, localSettings] = await Promise.all([
@@ -45,6 +49,8 @@ export function useLuckyList() {
       if (!localSettings) await db.settings.put(defaultSettings);
       const count = await db.tasks.count();
       if (count === 0) await db.tasks.bulkPut(createSeedTasks());
+      const backupMeta = await db.meta.get("last_backup_at");
+      if (backupMeta?.value && !cancelled) setLastBackupAt(backupMeta.value);
 
       const client = createClient();
       const privateSession = localStorage.getItem("lucky_private_session") === "true";
@@ -71,6 +77,7 @@ export function useLuckyList() {
     async (input: Partial<Task> & Pick<Task, "title">) => {
       const stamp = nowIso();
       const existing = input.id ? await db.tasks.get(input.id) : null;
+      const wasDone = Boolean(existing && (existing.boardState === "done" || existing.progress >= 100));
       const task: Task = normalizeProgress({
         id: input.id ?? uid("task"),
         userId: input.userId ?? existing?.userId ?? null,
@@ -98,6 +105,11 @@ export function useLuckyList() {
       }
       await db.tasks.put(task);
       await enqueueTask(task);
+      const nextTask = !wasDone ? createNextRecurringTask(task) : null;
+      if (nextTask) {
+        await db.tasks.put(nextTask);
+        await enqueueTask(nextTask);
+      }
       await refresh();
       return task;
     },
@@ -188,6 +200,20 @@ export function useLuckyList() {
     [settings],
   );
 
+  const quickAdd = useCallback(
+    async (text: string) => {
+      const parsed = parseQuickAdd(text);
+      if (!parsed) return null;
+      const task = await saveTask(parsed.task);
+      const category = parsed.task.category?.trim();
+      if (category && !settings.categories.some((item) => item.toLowerCase() === category.toLowerCase())) {
+        await saveSettings({ categories: [...settings.categories, category] });
+      }
+      return task;
+    },
+    [saveSettings, saveTask, settings.categories],
+  );
+
   const runSync = useCallback(async () => {
     if (!navigator.onLine) {
       setSyncState("offline");
@@ -219,16 +245,70 @@ export function useLuckyList() {
     }
   }, [refresh]);
 
+  const createBackupPayload = useCallback(
+    () => ({
+      identifier: "LUCKY_LIST_DATA",
+      generated_at: nowIso(),
+      tasks,
+      settings,
+      payload: {
+        tasks,
+        systemCategories: settings.categories,
+        deadlineDaysThreshold: settings.deadlineThresholdDays,
+        isDarkTheme: settings.theme === "dark",
+      },
+    }),
+    [settings, tasks],
+  );
+
+  const backupNow = useCallback(
+    async (download = false) => {
+      const stamp = nowIso();
+      const content = JSON.stringify(createBackupPayload(), null, 2);
+      await Promise.all([
+        db.meta.put({ key: "latest_backup_json", value: content }),
+        db.meta.put({ key: "last_backup_at", value: stamp }),
+      ]);
+      setLastBackupAt(stamp);
+      if (download) {
+        downloadText(
+          `Lucky_List_Backup_${new Date().toISOString().slice(0, 10)}.json`,
+          content,
+          "application/json;charset=utf-8",
+        );
+      }
+      return stamp;
+    },
+    [createBackupPayload],
+  );
+
+  useEffect(() => {
+    if (loading || settings.autoBackupMinutes <= 0) return;
+    const interval = window.setInterval(() => {
+      void backupNow(false);
+    }, Math.max(1, settings.autoBackupMinutes) * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [backupNow, loading, settings.autoBackupMinutes]);
+
   const exportJson = useCallback(() => {
+    void backupNow(true);
+  }, [backupNow]);
+
+  const exportLatestLocalBackup = useCallback(async () => {
+    const latest = await db.meta.get("latest_backup_json");
+    if (!latest?.value) {
+      await backupNow(true);
+      return;
+    }
     downloadText(
       `Lucky_List_Backup_${new Date().toISOString().slice(0, 10)}.json`,
-      JSON.stringify({ identifier: "LUCKY_LIST_DATA", generated_at: nowIso(), tasks, settings }, null, 2),
+      latest.value,
       "application/json;charset=utf-8",
     );
-  }, [settings, tasks]);
+  }, [backupNow]);
 
   const exportCsv = useCallback(() => {
-    const headers = ["ID", "Title", "Category", "Priority", "Progress", "Status", "Start", "Due", "Completed", "Notes"];
+    const headers = ["ID", "Title", "Category", "Priority", "Progress", "Status", "Start", "Due", "Reminder", "Repeat", "Completed", "Notes"];
     downloadText(
       `Lucky_List_Report_${new Date().toISOString().slice(0, 10)}.csv`,
       `\uFEFF${[headers.join(","), ...tasks.map(taskToCsvRow)].join("\n")}`,
@@ -236,59 +316,33 @@ export function useLuckyList() {
     );
   }, [tasks]);
 
-  const importJson = useCallback(
-    async (file: File) => {
-      const text = await file.text();
-      const data = JSON.parse(text) as ImportPayload;
-      const importedTasks = data.tasks ?? data.payload?.tasks;
-      if (Array.isArray(importedTasks)) {
-        const normalized = importedTasks.map((raw) => {
-          const item = raw as Partial<Task> & Record<string, unknown>;
-          const id = String(item.id ?? uid("task"));
-          const subtasks = Array.isArray(item.subtasks)
-            ? (item.subtasks as (Partial<Subtask> & { text?: string })[]).map((subtask, index) => ({
-                id: String(subtask.id ?? uid("subtask")),
-                taskId: id,
-                title: String(subtask.title ?? subtask.text ?? "Subtask"),
-                progress: Number(subtask.progress ?? 0),
-                position: Number(subtask.position ?? index),
-                completedAt: subtask.completedAt ?? null,
-                deletedAt: subtask.deletedAt ?? null,
-                updatedAt: String(subtask.updatedAt ?? nowIso()),
-              }))
-            : [];
-          return {
-            id,
-            title: String(item.title ?? item.name ?? "Untitled task"),
-            notes: String(item.notes ?? ""),
-            category: String(item.category ?? ""),
-            priority: (item.priority as TaskPriority) ?? "Normal",
-            progress: Number(item.progress ?? item.status ?? 0),
-            boardState: ((item.boardState as BoardState) ?? (Number(item.progress ?? item.status ?? 0) >= 100 ? "done" : "todo")),
-            startDate: (item.startDate as string) ?? null,
-            dueAt: (item.dueAt as string) ?? (item.deadline as string) ?? null,
-            reminderAt: (item.reminderAt as string) ?? null,
-            repeatRule: item.repeatRule ?? { frequency: "none" },
-            archivedAt: (item.archivedAt as string) ?? null,
-            deletedAt: (item.deletedAt as string) ?? null,
-            completedAt: (item.completedAt as string) ?? (item.completeDate as string) ?? null,
-            createdAt: (item.createdAt as string) ?? (item.addDate as string) ?? nowIso(),
-            updatedAt: nowIso(),
-            subtasks,
-          } satisfies Task;
-        });
-        await db.tasks.bulkPut(normalized);
-        for (const task of normalized) await enqueueTask(task);
+  const importNormalized = useCallback(
+    async (normalized: NormalizedImport) => {
+      if (normalized.tasks.length) {
+        await db.tasks.bulkPut(normalized.tasks);
+        for (const task of normalized.tasks) await enqueueTask(task);
       }
-      if (data.payload?.systemCategories || data.settings) {
+      if (Object.keys(normalized.settings).length) {
         await saveSettings({
-          categories: data.payload?.systemCategories ?? data.settings?.categories ?? settings.categories,
-          deadlineThresholdDays: data.payload?.deadlineDaysThreshold ?? data.settings?.deadlineThresholdDays ?? settings.deadlineThresholdDays,
+          categories: normalized.settings.categories ?? settings.categories,
+          deadlineThresholdDays: normalized.settings.deadlineThresholdDays ?? settings.deadlineThresholdDays,
+          theme: normalized.settings.theme ?? settings.theme,
+          notificationsEnabled: normalized.settings.notificationsEnabled ?? settings.notificationsEnabled,
+          autoBackupMinutes: normalized.settings.autoBackupMinutes ?? settings.autoBackupMinutes,
         });
       }
       await refresh();
+      return normalized;
     },
     [refresh, saveSettings, settings],
+  );
+
+  const importFile = useCallback(
+    async (file: File) => {
+      const text = await file.text();
+      return importNormalized(parseImportFileText(text, file.name));
+    },
+    [importNormalized],
   );
 
   const visibleTasks = useMemo(() => tasks.filter((task) => !task.deletedAt), [tasks]);
@@ -302,6 +356,7 @@ export function useLuckyList() {
     isAuthed,
     saveTask,
     moveTask,
+    quickAdd,
     deleteTask,
     archiveTask,
     cloneTask,
@@ -309,8 +364,11 @@ export function useLuckyList() {
     saveSettings,
     runSync,
     exportJson,
+    backupNow,
+    exportLatestLocalBackup,
     exportCsv,
-    importJson,
+    importFile,
+    lastBackupAt,
     refresh,
   };
 }

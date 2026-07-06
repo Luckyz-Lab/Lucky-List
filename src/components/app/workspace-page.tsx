@@ -9,11 +9,15 @@ import {
   CheckCircle2,
   ChevronRight,
   CirclePlus,
+  Clock,
   Cloud,
   CloudOff,
+  Command,
   Copy,
   Download,
+  FileJson,
   Gauge,
+  Keyboard,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -26,8 +30,10 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sun,
+  Target,
   Trash2,
   Upload,
+  Zap,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import {
@@ -40,6 +46,9 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
+import { CommandPalette } from "@/components/app/command-palette";
+import { QuickAddBar } from "@/components/app/quick-add-bar";
+import { useReminderNotifications } from "@/lib/client/use-reminder-notifications";
 import { useLuckyList } from "@/lib/client/use-lucky-list";
 import { createClient, hasSupabaseEnv } from "@/lib/supabase/client";
 import type { AppView, BoardState, SyncState, Task, TaskPriority } from "@/lib/types";
@@ -51,6 +60,7 @@ import {
   isDoneTask,
   isDueSoon,
   isOverdue,
+  isTodayTask,
   priorityLabel,
   repeatLabel,
   taskSort,
@@ -59,6 +69,7 @@ import { TaskModal } from "./task-modal";
 
 const navItems: { view: AppView; href: string; label: string; icon: typeof LayoutDashboard }[] = [
   { view: "dashboard", href: "/app", label: "แดชบอร์ด", icon: LayoutDashboard },
+  { view: "focus", href: "/app/focus", label: "Focus", icon: Target },
   { view: "board", href: "/app/board", label: "บอร์ด", icon: Gauge },
   { view: "tasks", href: "/app/tasks", label: "งานทั้งหมด", icon: ListChecks },
   { view: "calendar", href: "/app/calendar", label: "ปฏิทิน", icon: CalendarDays },
@@ -100,6 +111,8 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [importNotice, setImportNotice] = useState("");
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"All" | TaskPriority>("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -112,6 +125,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     isAuthed,
     saveTask,
     moveTask,
+    quickAdd,
     deleteTask,
     archiveTask,
     cloneTask,
@@ -119,8 +133,11 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     saveSettings,
     runSync,
     exportJson,
+    backupNow,
+    exportLatestLocalBackup,
     exportCsv,
-    importJson,
+    importFile,
+    lastBackupAt,
   } = useLuckyList();
 
   const activeView = navItems.find((item) => item.href === pathname)?.view ?? initialView;
@@ -133,10 +150,22 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     [openTasks, userSettings.deadlineThresholdDays],
   );
   const overdueTasks = useMemo(() => openTasks.filter(isOverdue), [openTasks]);
+  const todayTasks = useMemo(() => openTasks.filter(isTodayTask).sort(taskSort), [openTasks]);
+  const focusTasks = useMemo(() => {
+    const seen = new Set<string>();
+    return [...overdueTasks, ...todayTasks, ...soonTasks, ...openTasks.filter((task) => task.priority === "Urgent")]
+      .filter((task) => {
+        if (seen.has(task.id)) return false;
+        seen.add(task.id);
+        return true;
+      })
+      .sort(taskSort);
+  }, [openTasks, overdueTasks, soonTasks, todayTasks]);
   const categories = useMemo(
     () => Array.from(new Set([...userSettings.categories, ...tasks.map((task) => task.category).filter(Boolean)])) as string[],
     [tasks, userSettings.categories],
   );
+  const reminders = useReminderNotifications(activeTasks, userSettings.notificationsEnabled);
 
   const filteredTasks = useMemo(() => {
     const text = query.toLowerCase();
@@ -165,6 +194,26 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
   function openEdit(task: Task) {
     setEditingTask(task);
     setModalOpen(true);
+  }
+
+  async function handleQuickAdd(text: string) {
+    const task = await quickAdd(text);
+    if (task) setImportNotice(`Added: ${task.title}`);
+    return task;
+  }
+
+  async function handleImportFile(file: File) {
+    try {
+      const result = await importFile(file);
+      const warning = result.warnings.length ? ` (${result.warnings.join(" ")})` : "";
+      setImportNotice(`Imported ${result.tasks.length} tasks from ${result.source}.${warning}`);
+    } catch (error) {
+      setImportNotice(error instanceof Error ? error.message : "Import failed");
+    }
+  }
+
+  function navigateTo(href: string) {
+    router.push(href);
   }
 
   async function signOut() {
@@ -261,6 +310,10 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                   <SyncStatusIcon state={syncState} size={15} />
                   {syncMessage}
                 </div>
+                <Button variant="secondary" onClick={() => setCommandOpen(true)} className="px-3" title="Command palette">
+                  <Command size={17} />
+                  <span className="hidden md:inline">Ctrl K</span>
+                </Button>
                 <Button variant="secondary" onClick={() => saveSettings({ theme: userSettings.theme === "dark" ? "light" : "dark" })} className="px-3">
                   {userSettings.theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
                 </Button>
@@ -277,6 +330,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
 
           <div className="mx-auto grid max-w-7xl gap-5 p-4 md:p-6">
             {activeView === "dashboard" && renderDashboard()}
+            {activeView === "focus" && renderFocus()}
             {activeView === "board" && renderBoard()}
             {activeView === "tasks" && renderTasks()}
             {activeView === "calendar" && renderCalendar()}
@@ -286,7 +340,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-[var(--border)] bg-[var(--surface)]/95 p-2 backdrop-blur lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-7 border-t border-[var(--border)] bg-[var(--surface)]/95 p-2 backdrop-blur lg:hidden">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = item.view === activeView;
@@ -298,6 +352,18 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
           );
         })}
       </nav>
+
+      <CommandPalette
+        open={commandOpen}
+        tasks={activeTasks}
+        onOpenChange={setCommandOpen}
+        onQuickAdd={handleQuickAdd}
+        onOpenTask={openEdit}
+        onCreateTask={openCreate}
+        onNavigate={navigateTo}
+        onRunSync={runSync}
+        onExportJson={exportJson}
+      />
 
       <TaskModal
         open={modalOpen}
@@ -311,9 +377,84 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     </div>
   );
 
+  function renderFocus() {
+    const recurringTasks = activeTasks.filter((task) => task.repeatRule.frequency !== "none" && !isDoneTask(task)).sort(taskSort);
+    return (
+      <>
+        <QuickAddBar onQuickAdd={handleQuickAdd} />
+
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <StatCard title="Overdue" value={overdueTasks.length} tone="rose" detail="Needs attention first" />
+          <StatCard title="Today" value={todayTasks.length} tone="indigo" detail="Due, starts, or reminds today" />
+          <StatCard title="Due soon" value={soonTasks.length} tone="amber" detail={`Within ${userSettings.deadlineThresholdDays} days`} />
+          <StatCard title="Reminders" value={reminders.pendingReminders.length} tone="emerald" detail={userSettings.notificationsEnabled ? "Notifications enabled" : "Notifications off"} />
+        </section>
+
+        <section className="grid gap-5 xl:grid-cols-[1.35fr_0.8fr]">
+          <Panel className="p-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-black">
+                  <Target size={19} className="text-indigo-500" />
+                  Focus Queue
+                </h2>
+                <p className="text-sm text-[var(--muted)]">Overdue, today, due soon, and urgent tasks are grouped here.</p>
+              </div>
+              <Button variant="secondary" onClick={() => setCommandOpen(true)}>
+                <Keyboard size={16} />
+                Ctrl K
+              </Button>
+            </div>
+            <div className="grid gap-3 xl:grid-cols-2">
+              {focusTasks.map((task) => (
+                <TaskCard key={task.id} task={task} onEdit={openEdit} onMove={moveTask} onDelete={deleteTask} onClone={cloneTask} onArchive={archiveTask} onSubtask={updateSubtask} />
+              ))}
+              {!focusTasks.length && <EmptyState title="No focus tasks" detail="Everything urgent is clear. Add a new task or check the board." />}
+            </div>
+          </Panel>
+
+          <div className="grid gap-5">
+            <Panel className="p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="flex items-center gap-2 text-lg font-black">
+                  <Clock size={19} className="text-amber-500" />
+                  Today
+                </h2>
+                <span className="text-sm font-black text-[var(--muted)]">{todayTasks.length}</span>
+              </div>
+              <div className="grid gap-3">
+                {todayTasks.slice(0, 5).map((task) => (
+                  <TaskMini key={task.id} task={task} onClick={() => openEdit(task)} />
+                ))}
+                {!todayTasks.length && <EmptyState title="No task today" detail="Your today list is empty." />}
+              </div>
+            </Panel>
+
+            <Panel className="p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="flex items-center gap-2 text-lg font-black">
+                  <Zap size={19} className="text-emerald-500" />
+                  Recurring
+                </h2>
+                <span className="text-sm font-black text-[var(--muted)]">{recurringTasks.length}</span>
+              </div>
+              <div className="grid gap-3">
+                {recurringTasks.slice(0, 5).map((task) => (
+                  <TaskMini key={task.id} task={task} onClick={() => openEdit(task)} />
+                ))}
+                {!recurringTasks.length && <EmptyState title="No recurring task" detail="Set repeat in a task to generate the next round after completion." />}
+              </div>
+            </Panel>
+          </div>
+        </section>
+      </>
+    );
+  }
+
   function renderDashboard() {
     return (
       <>
+        <QuickAddBar onQuickAdd={handleQuickAdd} />
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard title="งานทั้งหมด" value={activeTasks.length} tone="indigo" detail={`${doneTasks.length} งานเสร็จแล้ว`} />
           <StatCard title="กำลังทำ" value={openTasks.length} tone="amber" detail="Todo + WIP" />
@@ -519,15 +660,21 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
             <SettingLine label="Supabase" value={hasSupabaseEnv() ? "Configured" : "Local mode"} />
             <SettingLine label="สถานะ Sync" value={syncMessage} />
             <SettingLine label="Offline DB" value="IndexedDB / Dexie" />
+            <SettingLine label="Last backup" value={lastBackupAt ? formatThaiDate(lastBackupAt) : "Not yet"} />
+            <SettingLine label="Notifications" value={reminders.permission} />
           </div>
           <div className="mt-5 flex flex-wrap gap-2">
             <Button onClick={runSync}>
               <RefreshCcw size={16} />
               Sync now
             </Button>
-            <Button variant="secondary" onClick={exportJson}>
+            <Button variant="secondary" onClick={() => void backupNow(true)}>
               <Download size={16} />
-              Backup JSON
+              Backup now
+            </Button>
+            <Button variant="secondary" onClick={() => void exportLatestLocalBackup()}>
+              <FileJson size={16} />
+              Latest backup
             </Button>
             <Button variant="secondary" onClick={exportCsv}>
               <Download size={16} />
@@ -535,20 +682,21 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
             </Button>
             <Button variant="secondary" onClick={() => fileRef.current?.click()}>
               <Upload size={16} />
-              Import JSON
+              Import JSON/HTML
             </Button>
             <input
               ref={fileRef}
               type="file"
               className="hidden"
-              accept=".json,application/json"
+              accept=".json,.html,application/json,text/html"
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) importJson(file);
+                if (file) void handleImportFile(file);
                 event.currentTarget.value = "";
               }}
             />
           </div>
+          {importNotice && <p className="mt-4 rounded-lg bg-[var(--surface-strong)] px-3 py-2 text-xs font-semibold text-[var(--muted)]">{importNotice}</p>}
         </Panel>
         <Panel className="p-5">
           <h2 className="text-lg font-black">Preferences</h2>
@@ -556,6 +704,34 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
             <label className="grid gap-1 text-sm font-bold">
               แจ้งเตือน deadline ภายในกี่วัน
               <input type="number" min={1} max={31} value={userSettings.deadlineThresholdDays} onChange={(event) => saveSettings({ deadlineThresholdDays: Number(event.target.value) || 3 })} className="focus-ring rounded-lg border border-[var(--border)] bg-transparent px-3 py-2" />
+            </label>
+            <label className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] p-3 text-sm font-bold">
+              <span>
+                <span className="block">Reminder notifications</span>
+                <span className="text-xs font-semibold text-[var(--muted)]">Browser permission: {reminders.permission}</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={userSettings.notificationsEnabled}
+                onChange={async (event) => {
+                  const enabled = event.target.checked;
+                  if (enabled && reminders.permission !== "granted") {
+                    const result = await reminders.requestPermission();
+                    if (result !== "granted") {
+                      setImportNotice("Browser notification permission was not granted.");
+                      await saveSettings({ notificationsEnabled: false });
+                      return;
+                    }
+                  }
+                  await saveSettings({ notificationsEnabled: enabled });
+                }}
+                className="h-5 w-5 accent-indigo-600"
+              />
+            </label>
+            <label className="grid gap-1 text-sm font-bold">
+              Auto backup interval (minutes)
+              <input type="number" min={0} max={1440} value={userSettings.autoBackupMinutes} onChange={(event) => saveSettings({ autoBackupMinutes: Number(event.target.value) || 0 })} className="focus-ring rounded-lg border border-[var(--border)] bg-transparent px-3 py-2" />
+              <span className="text-xs font-semibold text-[var(--muted)]">Set 0 to disable local smart backup snapshots.</span>
             </label>
             <label className="grid gap-1 text-sm font-bold">
               Theme

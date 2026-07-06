@@ -1,5 +1,5 @@
-const CACHE_NAME = "lucky-list-shell-v1";
-const APP_SHELL = ["/", "/app", "/login", "/manifest.webmanifest", "/icon.svg"];
+const CACHE_NAME = "lucky-list-shell-v2";
+const APP_SHELL = ["/", "/app", "/app/focus", "/app/tasks", "/app/board", "/app/calendar", "/app/settings", "/login", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
