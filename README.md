@@ -1,6 +1,6 @@
 # Lucky List
 
-Hybrid personal task web app built with Next.js, Supabase, Dexie/IndexedDB, Tailwind CSS, and PWA support.
+Hybrid personal task web app built with Next.js, Dexie/IndexedDB, Tailwind CSS, PWA support, and optional Supabase sync.
 
 ## Local Development
 
@@ -13,7 +13,7 @@ Open `http://localhost:3000`.
 
 ## Environment
 
-Copy `.env.example` to `.env.local` and fill in Supabase values when you want online sync:
+The app works with a local PIN and IndexedDB without any environment variables. Copy `.env.example` to `.env.local` only when you want optional Supabase sync:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
@@ -21,7 +21,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
-Without Supabase env values, the app runs in local private mode with IndexedDB only.
+Without Supabase env values, the app runs in PIN-protected local mode with IndexedDB only.
 
 ## Supabase Setup
 
@@ -38,13 +38,13 @@ Without Supabase env values, the app runs in local private mode with IndexedDB o
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `NEXT_PUBLIC_APP_URL` with the production URL
-4. Deploy preview, test login/sync/offline shell, then promote to production.
+4. Deploy preview, test PIN unlock/sync/offline shell, then promote to production.
 
 ## QA Checklist
 
 - `npm run lint`
 - `npm run build`
-- Login/logout and protected routes
+- PIN setup/unlock/logout and protected routes
 - Create, edit, move, archive, delete, undo, and restore tasks
 - Search syntax: `#category`, `priority:urgent`, `status:wip`, `due:today`, `due:soon`, `reminder:today`, `repeat:weekly`
 - Offline create/edit, then reconnect and sync

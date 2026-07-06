@@ -267,10 +267,10 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
           <ShieldCheck className="mx-auto mb-4 text-[var(--foreground)]" size={44} />
           <h1 className="text-2xl font-black">Lucky List ถูกล็อกไว้</h1>
           <p className="mt-2 text-sm text-[var(--muted)]">
-            เข้าสู่ระบบ Supabase หรือเปิดโหมดส่วนตัวในเครื่องเพื่อใช้งานต่อ
+            ใส่ PIN ของเครื่องนี้เพื่อกลับเข้าใช้งาน Lucky List
           </p>
           <Link href="/login" className="mt-5 inline-flex">
-            <Button>ไปหน้า Login</Button>
+            <Button>ไปหน้า PIN</Button>
           </Link>
         </Panel>
       </div>
@@ -729,7 +729,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
         <Panel className="p-5">
           <h2 className="text-lg font-black">ระบบและ Sync</h2>
           <div className="mt-4 grid gap-3">
-            <SettingLine label="Supabase" value={hasSupabaseEnv() ? "Configured" : "Local mode"} />
+            <SettingLine label="Sync backend" value={hasSupabaseEnv() ? "Supabase configured" : "Local PIN mode"} />
             <SettingLine label="สถานะ Sync" value={syncMessage} />
             <SettingLine label="Offline DB" value="IndexedDB / Dexie" />
             <SettingLine label="Last backup" value={lastBackupAt ? formatThaiDate(lastBackupAt) : "Not yet"} />

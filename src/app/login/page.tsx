@@ -1,67 +1,94 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LockKeyhole, Mail, ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
-import { createClient, hasSupabaseEnv } from "@/lib/supabase/client";
 
-function friendlyAuthMessage(message: string) {
-  const text = message.toLowerCase();
-  if (text.includes("rate limit") || text.includes("too many") || text.includes("429")) {
-    return "Supabase จำกัดการสมัครหรือส่งอีเมลชั่วคราว ลองใหม่อีกครั้งภายหลัง หรือเปิดโหมดส่วนตัวในเครื่องไปก่อน";
-  }
-  if (text.includes("email not confirmed")) {
-    return "บัญชียังไม่ได้ยืนยันอีเมล กรุณาเปิดอีเมลจาก Supabase แล้วกดยืนยันก่อน Login";
-  }
-  if (text.includes("invalid login credentials")) {
-    return "อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือบัญชียังไม่ได้สมัคร/ยืนยันอีเมล";
-  }
-  return message;
+const pinHashKey = "lucky_list_pin_hash";
+const pinSaltKey = "lucky_list_pin_salt";
+const privateSessionKey = "lucky_private_session";
+
+function bytesToHex(bytes: ArrayBuffer) {
+  return Array.from(new Uint8Array(bytes))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function hashPin(pin: string, salt: string) {
+  const payload = new TextEncoder().encode(`${salt}:${pin}`);
+  return bytesToHex(await crypto.subtle.digest("SHA-256", payload));
+}
+
+function newSalt() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [hasPin, setHasPin] = useState(() =>
+    typeof window === "undefined" ? false : Boolean(localStorage.getItem(pinHashKey) && localStorage.getItem(pinSaltKey)),
+  );
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  async function signIn(mode: "signin" | "signup") {
-    setLoading(true);
+  const modeLabel = useMemo(() => (hasPin ? "ใส่ PIN เพื่อเข้า Lucky List" : "ตั้ง PIN สำหรับเครื่องนี้"), [hasPin]);
+
+  function validatePin(value: string) {
+    return /^\d{4,8}$/.test(value);
+  }
+
+  async function submitPin() {
     setMessage("");
-    const client = createClient();
-    if (!client) {
-      setMessage("ยังไม่ได้ตั้งค่า Supabase env ใช้โหมดส่วนตัวในเครื่องได้ก่อน");
-      setLoading(false);
+    if (!validatePin(pin)) {
+      setMessage("PIN ต้องเป็นตัวเลข 4-8 หลัก");
       return;
     }
-    const result =
-      mode === "signin"
-        ? await client.auth.signInWithPassword({ email, password })
-        : await client.auth.signUp({
-            email,
-            password,
-            options: {
-              emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/login`,
-            },
-          });
-    setLoading(false);
-    if (result.error) {
-      setMessage(friendlyAuthMessage(result.error.message));
+
+    if (!hasPin) {
+      if (pin !== confirmPin) {
+        setMessage("PIN สองช่องไม่ตรงกัน");
+        return;
+      }
+      const salt = newSalt();
+      localStorage.setItem(pinSaltKey, salt);
+      localStorage.setItem(pinHashKey, await hashPin(pin, salt));
+      localStorage.setItem(privateSessionKey, "true");
+      router.push("/app");
       return;
     }
-    if (mode === "signup" && !result.data.session) {
-      setMessage("สมัครสำเร็จแล้ว กรุณาเช็คอีเมลเพื่อยืนยันบัญชี จากนั้นกลับมา Login อีกครั้ง");
+
+    const salt = localStorage.getItem(pinSaltKey);
+    const savedHash = localStorage.getItem(pinHashKey);
+    if (!salt || !savedHash) {
+      setHasPin(false);
+      setMessage("ยังไม่มี PIN ในเครื่องนี้ กรุณาตั้ง PIN ใหม่");
       return;
     }
+
+    const inputHash = await hashPin(pin, salt);
+    if (inputHash !== savedHash) {
+      setMessage("PIN ไม่ถูกต้อง");
+      return;
+    }
+    localStorage.setItem(privateSessionKey, "true");
     router.push("/app");
   }
 
-  function localMode() {
-    localStorage.setItem("lucky_private_session", "true");
-    router.push("/app");
+  function resetPin() {
+    localStorage.removeItem(pinHashKey);
+    localStorage.removeItem(pinSaltKey);
+    localStorage.removeItem(privateSessionKey);
+    setPin("");
+    setConfirmPin("");
+    setHasPin(false);
+    setMessage("ลบ PIN เดิมแล้ว ตั้ง PIN ใหม่ได้เลย");
   }
 
   return (
@@ -71,43 +98,68 @@ export default function LoginPage() {
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-lg border border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]">
             <ShieldCheck size={28} />
           </div>
-          <h1 className="text-2xl font-black">เข้าสู่ Lucky List</h1>
+          <h1 className="text-2xl font-black">{modeLabel}</h1>
           <p className="mt-2 text-sm text-[var(--muted)]">
-            Supabase Auth สำหรับ sync ข้ามเครื่อง หรือใช้โหมดส่วนตัวในเครื่องก่อน
+            ใช้งานแบบส่วนตัวบนเครื่องนี้ ไม่ต้องสมัคร ไม่ต้องรออีเมล ข้อมูลเก็บใน browser และสำรองออกเป็นไฟล์ได้
           </p>
         </div>
+
         <div className="grid gap-3">
           <label className="grid gap-1 text-sm font-bold">
-            Email
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={16} />
-              <input className="focus-ring w-full rounded-lg border border-[var(--border)] bg-transparent py-2 pl-10 pr-3" value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="you@example.com" />
-            </div>
-          </label>
-          <label className="grid gap-1 text-sm font-bold">
-            Password
+            PIN
             <div className="relative">
               <LockKeyhole className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={16} />
-              <input className="focus-ring w-full rounded-lg border border-[var(--border)] bg-transparent py-2 pl-10 pr-3" value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="อย่างน้อย 6 ตัวอักษร" />
+              <input
+                className="focus-ring w-full rounded-lg border border-[var(--border)] bg-transparent py-2 pl-10 pr-3 text-center text-lg font-black tracking-[0.3em]"
+                value={pin}
+                onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void submitPin();
+                }}
+                type="password"
+                inputMode="numeric"
+                autoComplete="current-password"
+                placeholder="••••"
+              />
             </div>
           </label>
-          {message && <p className="rounded-lg border border-[var(--warning)] bg-[color-mix(in_oklab,var(--warning)_8%,transparent)] p-3 text-sm font-semibold text-[var(--warning)]">{message}</p>}
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Button disabled={loading || !email || !password || !hasSupabaseEnv()} onClick={() => signIn("signin")}>
-              Login
-            </Button>
-            <Button variant="secondary" disabled={loading || !email || !password || !hasSupabaseEnv()} onClick={() => signIn("signup")}>
-              Sign up
-            </Button>
-          </div>
-          <Button variant="ghost" onClick={localMode}>
-            ใช้โหมดส่วนตัวในเครื่อง
-          </Button>
-          {!hasSupabaseEnv() && (
-            <p className="text-center text-xs text-[var(--muted)]">
-              เพิ่ม `NEXT_PUBLIC_SUPABASE_URL` และ `NEXT_PUBLIC_SUPABASE_ANON_KEY` ใน `.env.local` เพื่อเปิด login/sync จริง
-            </p>
+
+          {!hasPin && (
+            <label className="grid gap-1 text-sm font-bold">
+              Confirm PIN
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={16} />
+                <input
+                  className="focus-ring w-full rounded-lg border border-[var(--border)] bg-transparent py-2 pl-10 pr-3 text-center text-lg font-black tracking-[0.3em]"
+                  value={confirmPin}
+                  onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void submitPin();
+                  }}
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="new-password"
+                  placeholder="••••"
+                />
+              </div>
+            </label>
           )}
+
+          {message && <p className="rounded-lg border border-[var(--warning)] bg-[color-mix(in_oklab,var(--warning)_8%,transparent)] p-3 text-sm font-semibold text-[var(--warning)]">{message}</p>}
+
+          <Button onClick={() => void submitPin()}>
+            {hasPin ? "Unlock" : "Set PIN"}
+          </Button>
+
+          {hasPin && (
+            <Button variant="ghost" onClick={resetPin}>
+              ลืม PIN / ตั้งใหม่ในเครื่องนี้
+            </Button>
+          )}
+
+          <p className="text-center text-xs leading-5 text-[var(--muted)]">
+            PIN นี้กันคนเปิด browser เครื่องเดียวกันเท่านั้น ไม่ใช่ระบบบัญชีออนไลน์ ถ้าล้าง browser data ข้อมูลและ PIN ในเครื่องนี้จะหาย
+          </p>
         </div>
       </Panel>
     </main>
