@@ -25,6 +25,24 @@ function notificationBody(task: Task) {
   return bits.join(" - ") || "Task reminder";
 }
 
+function showReminderNotification(task: Task) {
+  const payload = {
+    type: "LUCKY_LIST_SHOW_REMINDER",
+    title: task.title,
+    body: notificationBody(task),
+    tag: task.id,
+  };
+  if (navigator.serviceWorker?.controller) {
+    navigator.serviceWorker.controller.postMessage(payload);
+    return;
+  }
+  new Notification(task.title, {
+    body: payload.body,
+    tag: task.id,
+    icon: "/icon.svg",
+  });
+}
+
 export function useReminderNotifications(tasks: Task[], enabled: boolean) {
   const [permission, setPermission] = useState<NotificationSupport>(() =>
     typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported",
@@ -65,11 +83,7 @@ export function useReminderNotifications(tasks: Task[], enabled: boolean) {
         notified.add(task.id);
         writeNotifiedIds(notified);
         setLastNotificationAt(new Date().toISOString());
-        new Notification(task.title, {
-          body: notificationBody(task),
-          tag: task.id,
-          icon: "/icon.svg",
-        });
+        showReminderNotification(task);
       };
 
       if (delay <= 0) {

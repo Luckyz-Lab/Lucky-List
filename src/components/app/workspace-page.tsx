@@ -50,6 +50,7 @@ import { CommandPalette } from "@/components/app/command-palette";
 import { QuickAddBar } from "@/components/app/quick-add-bar";
 import { useReminderNotifications } from "@/lib/client/use-reminder-notifications";
 import { useLuckyList } from "@/lib/client/use-lucky-list";
+import { matchesTaskQuery } from "@/lib/search-syntax";
 import { createClient, hasSupabaseEnv } from "@/lib/supabase/client";
 import type { AppView, BoardState, SyncState, Task, TaskPriority } from "@/lib/types";
 import {
@@ -76,6 +77,8 @@ const navItems: { view: AppView; href: string; label: string; icon: typeof Layou
   { view: "archive", href: "/app/archive", label: "ประวัติ", icon: Archive },
   { view: "settings", href: "/app/settings", label: "ตั้งค่า", icon: Settings },
 ];
+const primaryMobileNav = navItems.filter((item) => ["dashboard", "focus", "board", "tasks"].includes(item.view));
+const moreMobileNav = navItems.filter((item) => ["calendar", "archive", "settings"].includes(item.view));
 
 const boardStates: BoardState[] = ["todo", "wip", "done"];
 const priorities: TaskPriority[] = ["Low", "Normal", "High", "Urgent"];
@@ -112,7 +115,9 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [importNotice, setImportNotice] = useState("");
+  const [undoAction, setUndoAction] = useState<{ label: string; run: () => Promise<void> } | null>(null);
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"All" | TaskPriority>("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -168,13 +173,12 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
   const reminders = useReminderNotifications(activeTasks, userSettings.notificationsEnabled);
 
   const filteredTasks = useMemo(() => {
-    const text = query.toLowerCase();
     return activeTasks
-      .filter((task) => !text || `${task.title} ${task.notes} ${task.category}`.toLowerCase().includes(text))
+      .filter((task) => !query.trim() || matchesTaskQuery(task, query, userSettings.deadlineThresholdDays))
       .filter((task) => priorityFilter === "All" || task.priority === priorityFilter)
       .filter((task) => categoryFilter === "All" || task.category === categoryFilter)
       .sort(taskSort);
-  }, [activeTasks, categoryFilter, priorityFilter, query]);
+  }, [activeTasks, categoryFilter, priorityFilter, query, userSettings.deadlineThresholdDays]);
 
   const chartData = useMemo(() => {
     const days = ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"];
@@ -200,6 +204,28 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     const task = await quickAdd(text);
     if (task) setImportNotice(`Added: ${task.title}`);
     return task;
+  }
+
+  async function handleDeleteTask(task: Task) {
+    await deleteTask(task);
+    setUndoAction({
+      label: `Deleted: ${task.title}`,
+      run: async () => {
+        await saveTask({ ...task, deletedAt: null });
+      },
+    });
+  }
+
+  async function handleArchiveTask(task: Task, archived: boolean) {
+    await archiveTask(task, archived);
+    if (archived) {
+      setUndoAction({
+        label: `Archived: ${task.title}`,
+        run: async () => {
+          await archiveTask(task, false);
+        },
+      });
+    }
   }
 
   async function handleImportFile(file: File) {
@@ -340,17 +366,63 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-7 border-t border-[var(--border)] bg-[var(--surface)]/95 p-2 backdrop-blur lg:hidden">
-        {navItems.map((item) => {
+      {undoAction && (
+        <div className="fixed inset-x-3 bottom-20 z-50 mx-auto flex max-w-lg items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 shadow-xl shadow-black/15 lg:bottom-5">
+          <span className="min-w-0 truncate text-sm font-bold">{undoAction.label}</span>
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              const action = undoAction;
+              setUndoAction(null);
+              await action.run();
+            }}
+          >
+            <RotateCcw size={16} />
+            Undo
+          </Button>
+        </div>
+      )}
+
+      {moreOpen && (
+        <div className="fixed inset-x-3 bottom-20 z-50 grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 shadow-xl shadow-black/15 lg:hidden">
+          {moreMobileNav.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.view}
+                href={item.href}
+                onClick={() => setMoreOpen(false)}
+                className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-bold text-[var(--muted)] hover:bg-[var(--surface-strong)] hover:text-[var(--foreground)]"
+              >
+                <Icon size={18} />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border)] bg-[var(--surface)]/95 p-2 backdrop-blur lg:hidden">
+        {primaryMobileNav.map((item) => {
           const Icon = item.icon;
           const active = item.view === activeView;
           return (
-            <Link key={item.view} href={item.href} className={cn("flex flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-bold", active ? "bg-indigo-600 text-white" : "text-[var(--muted)]")}>
+            <Link key={item.view} href={item.href} onClick={() => setMoreOpen(false)} className={cn("flex min-h-12 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-bold", active ? "bg-indigo-600 text-white" : "text-[var(--muted)]")}>
               <Icon size={17} />
               {item.label}
             </Link>
           );
         })}
+        <button
+          onClick={() => setMoreOpen((value) => !value)}
+          className={cn(
+            "flex min-h-12 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-bold",
+            moreOpen || moreMobileNav.some((item) => item.view === activeView) ? "bg-indigo-600 text-white" : "text-[var(--muted)]",
+          )}
+        >
+          <MoreHorizontal size={17} />
+          More
+        </button>
       </nav>
 
       <CommandPalette
@@ -407,7 +479,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
             </div>
             <div className="grid gap-3 xl:grid-cols-2">
               {focusTasks.map((task) => (
-                <TaskCard key={task.id} task={task} onEdit={openEdit} onMove={moveTask} onDelete={deleteTask} onClone={cloneTask} onArchive={archiveTask} onSubtask={updateSubtask} />
+                <TaskCard key={task.id} task={task} onEdit={openEdit} onMove={moveTask} onDelete={handleDeleteTask} onClone={cloneTask} onArchive={handleArchiveTask} onSubtask={updateSubtask} />
               ))}
               {!focusTasks.length && <EmptyState title="No focus tasks" detail="Everything urgent is clear. Add a new task or check the board." />}
             </div>
@@ -531,7 +603,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
               </div>
               <div className="grid gap-3">
                 {(compact ? items.slice(0, 3) : items).map((task) => (
-                  <TaskCard key={task.id} task={task} onEdit={openEdit} onMove={moveTask} onDelete={deleteTask} onClone={cloneTask} onArchive={archiveTask} onSubtask={updateSubtask} />
+                  <TaskCard key={task.id} task={task} onEdit={openEdit} onMove={moveTask} onDelete={handleDeleteTask} onClone={cloneTask} onArchive={handleArchiveTask} onSubtask={updateSubtask} />
                 ))}
                 {!items.length && <EmptyState title="ว่างอยู่" detail="ย้ายงานมาที่คอลัมน์นี้ได้" />}
               </div>
@@ -548,7 +620,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
         <Panel className="grid gap-3 p-4 md:grid-cols-[1fr_180px_180px]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={17} />
-            <input className="focus-ring w-full rounded-lg border border-[var(--border)] bg-transparent py-2 pl-10 pr-3 text-sm" placeholder="ค้นหาชื่องาน หมวดหมู่ หรือรายละเอียด..." value={query} onChange={(event) => setQuery(event.target.value)} />
+            <input className="focus-ring w-full rounded-lg border border-[var(--border)] bg-transparent py-2 pl-10 pr-3 text-sm" placeholder="Search, #category, priority:urgent, status:wip, due:today..." value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
           <select className="focus-ring rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold" value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as "All" | TaskPriority)}>
             <option value="All">ทุกความสำคัญ</option>
@@ -573,7 +645,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
           </div>
           <div className="divide-y divide-[var(--border)]">
             {filteredTasks.map((task) => (
-              <TaskRow key={task.id} task={task} onEdit={openEdit} onMove={moveTask} onDelete={deleteTask} onClone={cloneTask} onArchive={archiveTask} />
+              <TaskRow key={task.id} task={task} onEdit={openEdit} onMove={moveTask} onDelete={handleDeleteTask} onClone={cloneTask} onArchive={handleArchiveTask} />
             ))}
             {!filteredTasks.length && <EmptyState title="ไม่พบงาน" detail="ลองล้าง filter หรือสร้างงานใหม่" />}
           </div>
@@ -639,7 +711,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                   <RotateCcw size={16} />
                   Restore
                 </Button>
-                <Button variant="danger" onClick={() => deleteTask(task)}>
+                <Button variant="danger" onClick={() => handleDeleteTask(task)}>
                   <Trash2 size={16} />
                 </Button>
               </div>

@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lucky List
 
-## Getting Started
+Hybrid personal task web app built with Next.js, Supabase, Dexie/IndexedDB, Tailwind CSS, and PWA support.
 
-First, run the development server:
+## Local Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Copy `.env.example` to `.env.local` and fill in Supabase values when you want online sync:
 
-## Learn More
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
 
-To learn more about Next.js, take a look at the following resources:
+Without Supabase env values, the app runs in local private mode with IndexedDB only.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Supabase Setup
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Create a Supabase project.
+2. Run `supabase/migrations/20260704130000_lucky_list_schema.sql` in the Supabase SQL editor or through the Supabase CLI.
+3. Confirm RLS is enabled for `profiles`, `tasks`, `subtasks`, `categories`, and `user_settings`.
+4. Copy the project URL and anon key into `.env.local` locally and Vercel environment variables in production.
 
-## Deploy on Vercel
+## Vercel Deploy
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Import this repo into Vercel.
+2. Set Framework Preset to Next.js.
+3. Add environment variables:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_APP_URL` with the production URL
+4. Deploy preview, test login/sync/offline shell, then promote to production.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## QA Checklist
+
+- `npm run lint`
+- `npm run build`
+- Login/logout and protected routes
+- Create, edit, move, archive, delete, undo, and restore tasks
+- Search syntax: `#category`, `priority:urgent`, `status:wip`, `due:today`, `due:soon`, `reminder:today`, `repeat:weekly`
+- Offline create/edit, then reconnect and sync
+- JSON/HTML import, JSON backup, CSV export
+- Mobile layout at 375-430px with bottom nav and More menu
