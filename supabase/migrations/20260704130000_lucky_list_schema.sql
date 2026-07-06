@@ -52,7 +52,7 @@ create table if not exists public.subtasks (
 create table if not exists public.user_settings (
   id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
-  theme text not null default 'dark' check (theme in ('dark', 'light', 'system')),
+  theme text not null default 'light' check (theme in ('dark', 'light', 'system')),
   deadline_threshold_days int not null default 3 check (deadline_threshold_days between 1 and 31),
   categories text[] not null default array['Project', 'IT', 'Marketing', 'Personal', 'Other'],
   notifications_enabled boolean not null default false,
