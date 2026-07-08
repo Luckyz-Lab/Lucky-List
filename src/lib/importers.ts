@@ -75,7 +75,7 @@ function normalizeSubtasks(raw: unknown, taskId: string) {
     return {
       id: stringValue(source.id, uid("subtask")),
       taskId,
-      title: stringValue(source.title ?? source.text ?? source.name, "Subtask"),
+      title: stringValue(source.title ?? source.text ?? source.name, "งานย่อย"),
       progress,
       position: numberValue(source.position, index),
       completedAt: dateString(source.completedAt ?? source.completed_at ?? (progress >= 100 ? nowIso() : null)),
@@ -96,7 +96,7 @@ export function normalizeImportedTask(raw: unknown, index = 0) {
   return {
     id,
     userId: nullableString(item.userId ?? item.user_id),
-    title: stringValue(item.title ?? item.name ?? item.text, `Imported task ${index + 1}`),
+    title: stringValue(item.title ?? item.name ?? item.text, `งานนำเข้า ${index + 1}`),
     notes: stringValue(item.notes),
     category: stringValue(item.category),
     priority: normalizePriority(item.priority),
@@ -145,7 +145,7 @@ function parsePayload(data: unknown, source: string): NormalizedImport | null {
   if (rawSettings.notificationsEnabled !== undefined) settings.notificationsEnabled = Boolean(rawSettings.notificationsEnabled);
   if (rawSettings.autoBackupMinutes !== undefined) settings.autoBackupMinutes = numberValue(rawSettings.autoBackupMinutes, 60);
 
-  if (!rawTasks.length) warnings.push("No task rows were found in this file.");
+  if (!rawTasks.length) warnings.push("ไม่พบข้อมูลงานในไฟล์นี้");
 
   return {
     tasks: rawTasks.map(normalizeImportedTask),
@@ -213,28 +213,28 @@ function parseHtml(text: string): NormalizedImport {
     .find(Boolean);
 
   if (scriptJson) {
-    const parsed = parsePayload(scriptJson, "Embedded JSON in HTML");
+    const parsed = parsePayload(scriptJson, "JSON ที่ฝังใน HTML");
     if (parsed) return parsed;
   }
 
   const localStorageMatch = text.match(/song_task_matrix['"]\s*,\s*['"](\[[\s\S]*?\])['"]\s*\)/);
   if (localStorageMatch) {
-    const parsed = parsePayload(tryParseJson(localStorageMatch[1]), "Legacy HTML localStorage export");
+    const parsed = parsePayload(tryParseJson(localStorageMatch[1]), "ข้อมูล localStorage จาก HTML เดิม");
     if (parsed) return parsed;
   }
 
   const seedLiteral = extractBalancedArray(text, "preloadedSeeds");
   if (seedLiteral) {
     const parsedSeeds = parseLooseJsArray(seedLiteral);
-    const parsed = parsePayload(parsedSeeds, "Legacy HTML seed data");
+    const parsed = parsePayload(parsedSeeds, "ข้อมูลตัวอย่างจาก HTML เดิม");
     if (parsed) {
-      parsed.warnings.push("This HTML file only exposes embedded seed data. For real old-app data, import the JSON backup exported from the old HTML app.");
+      parsed.warnings.push("ไฟล์ HTML นี้มีเฉพาะข้อมูลตัวอย่าง ถ้าต้องการข้อมูลจริงให้ import ไฟล์ JSON backup จากแอปเดิม");
       return parsed;
     }
   }
 
-  warnings.push("No supported Lucky List or Songsak task data was found in this HTML file.");
-  return { tasks: [], settings: {}, source: "Legacy HTML", warnings };
+  warnings.push("ไม่พบข้อมูล Lucky List หรือข้อมูลจากไฟล์ HTML เดิมที่รองรับ");
+  return { tasks: [], settings: {}, source: "HTML เดิม", warnings };
 }
 
 export function parseImportFileText(text: string, filename: string): NormalizedImport {
@@ -242,7 +242,7 @@ export function parseImportFileText(text: string, filename: string): NormalizedI
   if (lowerName.endsWith(".html") || /<html[\s>]/i.test(text)) return parseHtml(text);
 
   const json = tryParseJson(text);
-  const parsed = parsePayload(json, "JSON backup");
+  const parsed = parsePayload(json, "ไฟล์สำรอง JSON");
   if (parsed) return parsed;
 
   return parseHtml(text);

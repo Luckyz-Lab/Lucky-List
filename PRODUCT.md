@@ -6,7 +6,7 @@ product
 
 ## Users
 
-Lucky List is a private productivity workspace for one primary user who needs to capture, prioritize, schedule, archive, and review personal work across desktop and mobile. The user context is practical and task-focused: quick planning, daily focus, deadline review, offline edits, and sync when online.
+Lucky List is a private productivity workspace for one primary user who needs to capture, prioritize, schedule, archive, and review personal work across desktop and mobile. The user context is practical and task-focused: quick planning, daily focus, deadline review, cloud-backed edits, and simple backup/export.
 
 ## Product Purpose
 
@@ -26,7 +26,7 @@ Avoid colorful gamified task apps, decorative gradients, glassmorphism, oversize
 2. Earn trust through restraint: neutral surfaces, clear hierarchy, and predictable controls.
 3. Keep bilingual text readable: Thai and English should share one calm rhythm without display-font drama.
 4. Use color only as information: semantic states and destructive actions may use color, but navigation and primary actions stay monochrome.
-5. Preserve offline confidence: sync, backup, import, and restore affordances must remain visible and understandable.
+5. Preserve data confidence: cloud status, backup, import, and restore affordances must remain visible and understandable.
 
 ## Accessibility & Inclusion
 

@@ -1,12 +1,11 @@
 "use client";
 
 import Dexie, { type Table } from "dexie";
-import type { MutationQueueItem, Task, UserSettings } from "../types";
+import type { Task, UserSettings } from "../types";
 
 export class LuckyListDb extends Dexie {
   tasks!: Table<Task, string>;
   settings!: Table<UserSettings, string>;
-  queue!: Table<MutationQueueItem, string>;
   meta!: Table<{ key: string; value: string }, string>;
 
   constructor() {
@@ -16,6 +15,12 @@ export class LuckyListDb extends Dexie {
       settings: "id, updatedAt",
       queue: "id, createdAt, entity, operation",
       meta: "key",
+    });
+    this.version(2).stores({
+      tasks: "id, updatedAt, boardState, dueAt, archivedAt, deletedAt",
+      settings: "id, updatedAt",
+      meta: "key",
+      queue: null,
     });
   }
 }

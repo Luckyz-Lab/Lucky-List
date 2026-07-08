@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Task } from "../types";
-import { formatThaiDate, isDoneTask } from "../utils";
+import { categoryLabel, formatThaiDate, isDoneTask, priorityLabel } from "../utils";
 
 type NotificationSupport = NotificationPermission | "unsupported";
 
@@ -21,8 +21,8 @@ function writeNotifiedIds(ids: Set<string>) {
 }
 
 function notificationBody(task: Task) {
-  const bits = [task.category, task.dueAt ? `Due ${formatThaiDate(task.dueAt)}` : "", task.priority].filter(Boolean);
-  return bits.join(" - ") || "Task reminder";
+  const bits = [categoryLabel(task.category), task.dueAt ? `กำหนดส่ง ${formatThaiDate(task.dueAt)}` : "", priorityLabel(task.priority)].filter(Boolean);
+  return bits.join(" - ") || "แจ้งเตือนงาน";
 }
 
 function showReminderNotification(task: Task) {

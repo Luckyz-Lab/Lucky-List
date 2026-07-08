@@ -45,19 +45,54 @@ export function priorityWeight(priority: TaskPriority) {
 }
 
 export function boardLabel(state: BoardState) {
-  return { todo: "Todo", wip: "WIP", done: "Done" }[state];
+  return { todo: "รอทำ", wip: "กำลังทำ", done: "เสร็จแล้ว" }[state];
 }
 
 export function priorityLabel(priority: TaskPriority) {
   return { Low: "ต่ำ", Normal: "ปกติ", High: "สูง", Urgent: "ด่วนมาก" }[priority];
 }
 
+export function categoryLabel(category?: string | null) {
+  if (!category) return "ทั่วไป";
+  const labels: Record<string, string> = {
+    Inbox: "กล่องรับงาน",
+    Someday: "พักไว้ก่อน",
+    Project: "โปรเจกต์",
+    IT: "ไอที",
+    Marketing: "การตลาด",
+    Personal: "ส่วนตัว",
+    Operations: "งานระบบ",
+    Finance: "การเงิน",
+    Design: "ออกแบบ",
+    Other: "อื่นๆ",
+    Review: "รีวิว",
+    Focus: "โฟกัส",
+    Work: "งาน",
+  };
+  return labels[category] ?? category;
+}
+
 export function repeatLabel(rule: RepeatRule) {
   if (rule.frequency === "none") return "ไม่ทำซ้ำ";
   if (rule.frequency === "daily") return "ทุกวัน";
   if (rule.frequency === "monthly") return "ทุกเดือน";
-  if (rule.weekdays?.length) return `รายสัปดาห์ (${rule.weekdays.join(",")})`;
+  if (rule.weekdays?.length) return `ทุกสัปดาห์ (${rule.weekdays.join(",")})`;
   return "ทุกสัปดาห์";
+}
+
+export function relativeDueLabel(days: number | null, noDateLabel = "ยังไม่กำหนดวัน") {
+  if (days === null) return noDateLabel;
+  if (days < 0) return `เลยกำหนด ${Math.abs(days)} วัน`;
+  if (days === 0) return "วันนี้";
+  if (days === 1) return "พรุ่งนี้";
+  return `เหลือ ${days} วัน`;
+}
+
+export function notificationPermissionLabel(permission: string) {
+  if (permission === "granted") return "เปิดใช้งาน";
+  if (permission === "denied") return "ถูกปิดในเบราว์เซอร์";
+  if (permission === "unsupported") return "เบราว์เซอร์ไม่รองรับ";
+  return "ยังไม่ได้ขอสิทธิ์";
 }
 
 export function taskSort(a: Task, b: Task) {

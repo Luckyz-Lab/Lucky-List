@@ -1,7 +1,7 @@
 {
   "name": "Lucky List",
   "short_name": "Lucky List",
-  "description": "Hybrid offline-first task manager",
+  "description": "Online-first task manager",
   "start_url": "/app",
   "display": "standalone",
   "background_color": "#080b12",

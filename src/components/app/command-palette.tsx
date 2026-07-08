@@ -17,7 +17,7 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { Task } from "@/lib/types";
-import { cn, formatThaiDate, priorityLabel } from "@/lib/utils";
+import { categoryLabel, cn, formatThaiDate, priorityLabel } from "@/lib/utils";
 
 type CommandItem = {
   id: string;
@@ -36,7 +36,7 @@ export function CommandPalette({
   onOpenTask,
   onCreateTask,
   onNavigate,
-  onRunSync,
+  onUpdateCloud,
   onExportJson,
 }: {
   open: boolean;
@@ -46,7 +46,7 @@ export function CommandPalette({
   onOpenTask: (task: Task) => void;
   onCreateTask: () => void;
   onNavigate: (href: string) => void;
-  onRunSync: () => Promise<void>;
+  onUpdateCloud: () => Promise<void>;
   onExportJson: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -69,80 +69,80 @@ export function CommandPalette({
     const baseActions: CommandItem[] = [
       {
         id: "new-task",
-        label: "New task",
-        detail: "Open full task form",
+        label: "งานใหม่",
+        detail: "เปิดฟอร์มสร้างงานแบบเต็ม",
         icon: <CirclePlus size={16} />,
         run: onCreateTask,
         keywords: "new create add task",
       },
       {
         id: "focus",
-        label: "Open Focus",
-        detail: "Today, overdue, due soon",
+        label: "ไปหน้าโฟกัส",
+        detail: "วันนี้ เลยกำหนด และใกล้กำหนด",
         icon: <Target size={16} />,
         run: () => onNavigate("/app/focus"),
         keywords: "focus today overdue",
       },
       {
         id: "dashboard",
-        label: "Open Dashboard",
-        detail: "Overview and radar",
+        label: "ไปแดชบอร์ด",
+        detail: "ภาพรวมและงานใกล้กำหนด",
         icon: <LayoutDashboard size={16} />,
         run: () => onNavigate("/app"),
         keywords: "dashboard home",
       },
       {
         id: "board",
-        label: "Open Board",
-        detail: "Todo, WIP, Done",
+        label: "เปิดบอร์ด",
+        detail: "รอทำ กำลังทำ เสร็จแล้ว",
         icon: <Gauge size={16} />,
         run: () => onNavigate("/app/board"),
         keywords: "board kanban todo wip done",
       },
       {
         id: "tasks",
-        label: "Open Tasks",
-        detail: "Search and filters",
+        label: "รายการงาน",
+        detail: "ค้นหาและตัวกรอง",
         icon: <ListChecks size={16} />,
         run: () => onNavigate("/app/tasks"),
         keywords: "tasks list search filter",
       },
       {
         id: "calendar",
-        label: "Open Calendar",
-        detail: "Deadline timeline",
+        label: "ปฏิทิน",
+        detail: "ลำดับงานตามกำหนดส่ง",
         icon: <CalendarDays size={16} />,
         run: () => onNavigate("/app/calendar"),
         keywords: "calendar due deadline",
       },
       {
         id: "archive",
-        label: "Open Archive",
-        detail: "Restore old tasks",
+        label: "ประวัติงาน",
+        detail: "กู้คืนงานที่เก็บไว้",
         icon: <Archive size={16} />,
         run: () => onNavigate("/app/archive"),
         keywords: "archive restore history",
       },
       {
         id: "settings",
-        label: "Open Settings",
-        detail: "Backup, import, notifications",
+        label: "ตั้งค่า",
+        detail: "สำรอง นำเข้า และแจ้งเตือน",
         icon: <Settings size={16} />,
         run: () => onNavigate("/app/settings"),
         keywords: "settings backup import notification",
       },
       {
-        id: "sync",
-        label: "Sync now",
-        detail: "Push and pull Supabase changes",
+        id: "cloud",
+        label: "อัปเดตข้อมูล",
+        detail: "บันทึกและดึงข้อมูลออนไลน์ล่าสุด",
         icon: <RefreshCcw size={16} />,
-        run: onRunSync,
-        keywords: "sync cloud",
+        run: onUpdateCloud,
+        keywords: "cloud update save",
       },
       {
         id: "backup",
-        label: "Backup JSON",
-        detail: "Download a fresh backup file",
+        label: "สำรอง JSON",
+        detail: "ดาวน์โหลดไฟล์สำรองล่าสุด",
         icon: <Download size={16} />,
         run: onExportJson,
         keywords: "backup export json",
@@ -152,7 +152,7 @@ export function CommandPalette({
     const taskItems: CommandItem[] = tasks.slice(0, 80).map((task) => ({
       id: `task-${task.id}`,
       label: task.title,
-      detail: `${task.category || "No category"} - ${priorityLabel(task.priority)} - ${formatThaiDate(task.dueAt)}`,
+      detail: `${categoryLabel(task.category)} - ${priorityLabel(task.priority)} - ${formatThaiDate(task.dueAt)}`,
       icon: <Search size={16} />,
       run: () => onOpenTask(task),
       keywords: `${task.title} ${task.notes ?? ""} ${task.category ?? ""} ${task.priority}`,
@@ -163,8 +163,8 @@ export function CommandPalette({
 
     const quickCreate: CommandItem = {
       id: "quick-create",
-      label: `Create "${query.trim()}"`,
-      detail: "Parse quick add text and save locally",
+      label: `สร้าง "${query.trim()}"`,
+      detail: "แปลงข้อความเป็นงานแล้วบันทึก",
       icon: <CirclePlus size={16} />,
       run: async () => {
         await onQuickAdd(query);
@@ -174,7 +174,7 @@ export function CommandPalette({
 
     const matches = allItems.filter((item) => `${item.label} ${item.detail} ${item.keywords}`.toLowerCase().includes(normalizedQuery));
     return [quickCreate, ...matches].slice(0, 12);
-  }, [normalizedQuery, onCreateTask, onExportJson, onNavigate, onOpenTask, onQuickAdd, onRunSync, query, tasks]);
+  }, [normalizedQuery, onCreateTask, onExportJson, onNavigate, onOpenTask, onQuickAdd, onUpdateCloud, query, tasks]);
 
   const safeIndex = items.length ? Math.min(activeIndex, items.length - 1) : 0;
 
@@ -221,9 +221,9 @@ export function CommandPalette({
                 void execute(items[safeIndex]);
               }
             }}
-            placeholder="Search tasks or type a quick task..."
+            placeholder="ค้นหางานหรือพิมพ์งานด่วน..."
           />
-          <button onClick={() => onOpenChange(false)} className="focus-ring rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface-strong)]">
+          <button onClick={() => onOpenChange(false)} className="focus-ring rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface-strong)]" aria-label="ปิดคำสั่ง">
             <X size={17} />
           </button>
         </div>
@@ -247,7 +247,7 @@ export function CommandPalette({
               </span>
             </button>
           ))}
-          {!items.length && <div className="p-8 text-center text-sm font-semibold text-[var(--muted)]">No command found</div>}
+          {!items.length && <div className="p-8 text-center text-sm font-semibold text-[var(--muted)]">ไม่พบคำสั่ง</div>}
         </div>
       </div>
     </div>

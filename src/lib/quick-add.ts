@@ -64,6 +64,23 @@ const boardAliases: Record<string, BoardState> = {
   "เสร็จ": "done",
 };
 
+const weekdayAliases: Record<string, number> = {
+  sunday: 0,
+  sun: 0,
+  monday: 1,
+  mon: 1,
+  tuesday: 2,
+  tue: 2,
+  wednesday: 3,
+  wed: 3,
+  thursday: 4,
+  thu: 4,
+  friday: 5,
+  fri: 5,
+  saturday: 6,
+  sat: 6,
+};
+
 function todayAtStart() {
   const date = new Date();
   date.setHours(0, 0, 0, 0);
@@ -80,6 +97,14 @@ function dateFromToken(token: string): Date | null {
 
   const relative = normalized.match(/^\+?(\d+)(d|day|days|วัน)$/);
   if (relative) return addDays(today, Number(relative[1]));
+
+  if (normalized === "nextweek" || normalized === "next_week") return addDays(today, 7);
+
+  if (typeof weekdayAliases[normalized] === "number") {
+    const target = weekdayAliases[normalized];
+    const diff = (target - today.getDay() + 7) % 7 || 7;
+    return addDays(today, diff);
+  }
 
   const yyyyMmDd = parse(normalized, "yyyy-MM-dd", today);
   if (isValid(yyyyMmDd)) return yyyyMmDd;

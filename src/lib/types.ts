@@ -1,7 +1,7 @@
 export type TaskPriority = "Low" | "Normal" | "High" | "Urgent";
 export type BoardState = "todo" | "wip" | "done";
 export type RepeatFrequency = "none" | "daily" | "weekly" | "monthly";
-export type SyncState = "idle" | "offline" | "syncing" | "synced" | "error";
+export type CloudState = "checking" | "ready" | "saving" | "error" | "offline" | "local-preview";
 export type AppView = "dashboard" | "focus" | "board" | "tasks" | "calendar" | "archive" | "settings";
 
 export interface RepeatRule {
@@ -41,6 +41,14 @@ export interface Task {
   subtasks: Subtask[];
 }
 
+export type TaskDraft = Partial<Omit<Task, "id" | "createdAt" | "updatedAt" | "subtasks">> &
+  Pick<Task, "title"> & {
+    id?: string;
+    subtasks?: Subtask[];
+  };
+
+export type TaskPatch = Partial<Task> & Pick<Task, "id">;
+
 export interface UserSettings {
   id: string;
   userId?: string | null;
@@ -51,16 +59,6 @@ export interface UserSettings {
   autoBackupMinutes: number;
   lastSyncedAt?: string | null;
   updatedAt: string;
-}
-
-export interface MutationQueueItem {
-  id: string;
-  entity: "task" | "settings";
-  operation: "upsert" | "delete";
-  payload: Task | UserSettings;
-  createdAt: string;
-  attempts: number;
-  lastError?: string;
 }
 
 export interface ImportPayload {

@@ -18,7 +18,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-latin), var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-thai), var(--font-latin), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
@@ -57,9 +57,15 @@ html.dark {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-latin), var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-thai), var(--font-latin), ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
   letter-spacing: 0;
-  line-height: 1.5;
+  line-height: 1.58;
+  text-rendering: optimizeLegibility;
+}
+
+.font-black {
+  font-weight: 800;
 }
 
 * {
@@ -91,9 +97,48 @@ select {
   font: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+@media (min-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 14px;
+  }
+}
+
 .app-surface {
   background: var(--surface);
   border: 1px solid var(--border);
+}
+
+.scan-card p[class*="line-clamp"] {
+  display: none;
+}
+
+.scan-card input[type="range"] {
+  display: none;
+}
+
+.scan-card-actions button {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.scan-card-actions button svg {
+  flex: 0 0 auto;
 }
 
 .focus-ring {

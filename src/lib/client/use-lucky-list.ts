@@ -1,15 +1,24 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { db } from "./local-db";
-import { enqueueSettings, enqueueTask, syncWithSupabase } from "./sync";
-import { parseImportFileText, type NormalizedImport } from "../importers";
-import { parseQuickAdd } from "../quick-add";
-import { createNextRecurringTask } from "../recurrence";
-import { createClient, hasSupabaseEnv } from "../supabase/client";
-import { createSeedTasks, defaultSettings } from "../sample-data";
-import type { BoardState, SyncState, Task, UserSettings } from "../types";
-import { downloadText, nowIso, taskToCsvRow, uid } from "../utils";
+import { ensureCloudSession, type CloudSessionState } from "@/lib/auth/cloud";
+import { hasPrivateSession, lockPrivateSession } from "@/lib/auth/pin";
+import { parseImportFileText, type NormalizedImport } from "@/lib/importers";
+import { parseQuickAdd } from "@/lib/quick-add";
+import { createNextRecurringTask } from "@/lib/recurrence";
+import { createDemoTasks, createSeedTasks, defaultSettings } from "@/lib/sample-data";
+import {
+  getLegacyLastBackupAt,
+  markLegacyBackup,
+  migrateLegacyWorkspaceToCloud,
+  readLegacyWorkspace,
+  writeLocalPreviewSettings,
+  writeLocalPreviewTask,
+} from "@/lib/tasks/legacy-migration";
+import { createTaskRepository, type TaskRepository } from "@/lib/tasks/repository";
+import type { BoardState, CloudState, Task, TaskDraft, UserSettings } from "@/lib/types";
+import { downloadText, nowIso, taskToCsvRow, uid } from "@/lib/utils";
 
 function normalizeProgress(task: Task): Task {
   if (!task.subtasks.length) return task;
@@ -24,78 +33,208 @@ function normalizeProgress(task: Task): Task {
   };
 }
 
+function cloudQueryKeys(userId: string | null) {
+  return {
+    tasks: ["lucky-list", "tasks", userId] as const,
+    settings: ["lucky-list", "settings", userId] as const,
+  };
+}
+
 export function useLuckyList() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [settings, setSettings] = useState<UserSettings>(defaultSettings);
-  const [loading, setLoading] = useState(true);
-  const [syncState, setSyncState] = useState<SyncState>("idle");
-  const [syncMessage, setSyncMessage] = useState("PIN local mode");
+  const queryClient = useQueryClient();
+  const [booting, setBooting] = useState(true);
   const [isAuthed, setIsAuthed] = useState(false);
-  const [syncConnected, setSyncConnected] = useState(false);
+  const [cloudState, setCloudState] = useState<CloudState>("checking");
+  const [cloudMessage, setCloudMessage] = useState("กำลังตรวจสถานะข้อมูลออนไลน์...");
+  const [cloudSession, setCloudSession] = useState<CloudSessionState | null>(null);
+  const [repository, setRepository] = useState<TaskRepository | null>(null);
+  const [localPreviewTasks, setLocalPreviewTasks] = useState<Task[]>([]);
+  const [localPreviewSettings, setLocalPreviewSettings] = useState<UserSettings>(defaultSettings);
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    const [localTasks, localSettings] = await Promise.all([
-      db.tasks.toArray(),
-      db.settings.get("settings_default"),
-    ]);
-    setTasks(localTasks.filter((task) => !task.deletedAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
-    setSettings(localSettings ?? defaultSettings);
+  const userId = cloudSession?.mode === "cloud" ? cloudSession.userId : null;
+  const queryKeys = cloudQueryKeys(userId);
+
+  const refreshLocalPreview = useCallback(async () => {
+    const legacy = await readLegacyWorkspace();
+    setLocalPreviewTasks(legacy.tasks.filter((task) => !task.deletedAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+    setLocalPreviewSettings(legacy.settings);
+    setLastBackupAt(await getLegacyLastBackupAt());
   }, []);
+
+  const refreshCloud = useCallback(async () => {
+    if (!repository) {
+      await refreshLocalPreview();
+      return;
+    }
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings }),
+    ]);
+    setLastBackupAt(await getLegacyLastBackupAt());
+  }, [queryClient, queryKeys.settings, queryKeys.tasks, refreshLocalPreview, repository]);
 
   useEffect(() => {
     let cancelled = false;
-    async function boot() {
-      const localSettings = await db.settings.get("settings_default");
-      if (!localSettings) await db.settings.put(defaultSettings);
-      const count = await db.tasks.count();
-      if (count === 0) await db.tasks.bulkPut(createSeedTasks());
-      const backupMeta = await db.meta.get("last_backup_at");
-      if (backupMeta?.value && !cancelled) setLastBackupAt(backupMeta.value);
 
-      const client = createClient();
-      const privateSession = localStorage.getItem("lucky_private_session") === "true";
-      if (client) {
-        const { data } = await client.auth.getSession();
+    async function boot() {
+      if (!hasPrivateSession()) {
         if (!cancelled) {
-          setSyncConnected(Boolean(data.session));
-          setIsAuthed(Boolean(data.session) || privateSession);
-          setSyncMessage(data.session ? "Supabase sync ready" : "PIN local mode");
+          setIsAuthed(false);
+          setCloudState("checking");
+          setCloudMessage("ใส่ PIN เพื่อปลดล็อก Lucky List");
+          setBooting(false);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setIsAuthed(true);
+        setCloudState("checking");
+        setCloudMessage("กำลังตรวจสถานะข้อมูลออนไลน์...");
+      }
+
+      const session = await ensureCloudSession();
+      if (cancelled) return;
+
+      setCloudSession(session);
+      setCloudMessage(session.message);
+
+      if (session.mode === "cloud") {
+        const nextRepository = createTaskRepository(session.client, session.userId);
+        setRepository(nextRepository);
+        try {
+          const migrated = await migrateLegacyWorkspaceToCloud(nextRepository, session.userId);
+          if (!cancelled) {
+            setCloudState("ready");
+            setCloudMessage(migrated.migrated ? `พร้อมใช้งานออนไลน์ - ย้ายงานเดิม ${migrated.count} งานแล้ว` : session.message);
+            setLastBackupAt(await getLegacyLastBackupAt());
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: cloudQueryKeys(session.userId).tasks }),
+              queryClient.invalidateQueries({ queryKey: cloudQueryKeys(session.userId).settings }),
+            ]);
+          }
+        } catch (error) {
+          if (!cancelled) {
+            setCloudState("error");
+            setCloudMessage(error instanceof Error ? error.message : "ย้ายข้อมูลขึ้นออนไลน์ไม่สำเร็จ");
+          }
+        }
+      } else if (session.mode === "local-preview") {
+        setRepository(null);
+        await refreshLocalPreview();
+        if (!cancelled) {
+          setCloudState("local-preview");
+          setCloudMessage(session.message);
         }
       } else {
+        setRepository(null);
+        lockPrivateSession();
         if (!cancelled) {
-          setSyncConnected(false);
-          setIsAuthed(privateSession || !hasSupabaseEnv());
-          setSyncMessage("PIN local mode");
+          setIsAuthed(false);
+          setCloudState("error");
+          setCloudMessage(session.message);
         }
       }
-      await refresh();
-      if (!cancelled) setLoading(false);
+
+      if (!cancelled) setBooting(false);
     }
-    boot();
+
+    void boot();
     return () => {
       cancelled = true;
     };
-  }, [refresh]);
+  }, [queryClient, refreshLocalPreview]);
+
+  const tasksQuery = useQuery({
+    queryKey: queryKeys.tasks,
+    queryFn: () => {
+      if (!repository) throw new Error("พื้นที่เก็บข้อมูลออนไลน์ยังไม่พร้อม");
+      return repository.listTasks();
+    },
+    enabled: Boolean(repository && userId),
+  });
+
+  const settingsQuery = useQuery({
+    queryKey: queryKeys.settings,
+    queryFn: () => {
+      if (!repository) throw new Error("พื้นที่เก็บข้อมูลออนไลน์ยังไม่พร้อม");
+      return repository.getSettings();
+    },
+    enabled: Boolean(repository && userId),
+  });
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const theme = (settingsQuery.data ?? localPreviewSettings).theme;
     const applyTheme = () => {
-      document.documentElement.classList.toggle("dark", settings.theme === "dark" || (settings.theme === "system" && media.matches));
+      document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && media.matches));
     };
     applyTheme();
     media.addEventListener("change", applyTheme);
     return () => media.removeEventListener("change", applyTheme);
-  }, [settings.theme]);
+  }, [localPreviewSettings, settingsQuery.data]);
+
+  const activeRepository = repository;
+  const tasks = useMemo(
+    () => (activeRepository ? tasksQuery.data ?? [] : localPreviewTasks),
+    [activeRepository, localPreviewTasks, tasksQuery.data],
+  );
+  const settings = useMemo(
+    () => (activeRepository ? settingsQuery.data ?? defaultSettings : localPreviewSettings),
+    [activeRepository, localPreviewSettings, settingsQuery.data],
+  );
+  const loading = booting || (Boolean(activeRepository) && (tasksQuery.isLoading || settingsQuery.isLoading));
+  const cloudConnected = Boolean(activeRepository && cloudState === "ready");
+
+  const requireWritableCloud = useCallback(async () => {
+    if (!activeRepository) return null;
+    if (!navigator.onLine) {
+      setCloudState("offline");
+      setCloudMessage("ไม่มีอินเทอร์เน็ต - พักการบันทึกออนไลน์ไว้ก่อน");
+      throw new Error("ต้องเชื่อมต่ออินเทอร์เน็ตก่อนบันทึกงาน");
+    }
+    setCloudState("saving");
+    setCloudMessage("กำลังบันทึกข้อมูล...");
+    return activeRepository;
+  }, [activeRepository]);
+
+  const afterCloudWrite = useCallback(async (message = "ข้อมูลล่าสุดแล้ว") => {
+    await refreshCloud();
+    setCloudState("ready");
+    setCloudMessage(message);
+  }, [refreshCloud]);
+
+  const persistTask = useCallback(
+    async (task: Task) => {
+      const repo = await requireWritableCloud();
+      if (repo) {
+        await repo.saveTask(task);
+        await afterCloudWrite("บันทึกข้อมูลแล้ว");
+        return task;
+      }
+
+      if (cloudState === "local-preview") {
+        await writeLocalPreviewTask(task);
+        await refreshLocalPreview();
+        return task;
+      }
+
+      setCloudState("error");
+      setCloudMessage("ต้องเชื่อมต่อข้อมูลออนไลน์ก่อนบันทึกงาน");
+      throw new Error("ต้องเชื่อมต่อข้อมูลออนไลน์ก่อนบันทึกงาน");
+    },
+    [afterCloudWrite, cloudState, refreshLocalPreview, requireWritableCloud],
+  );
 
   const saveTask = useCallback(
-    async (input: Partial<Task> & Pick<Task, "title">) => {
+    async (input: TaskDraft) => {
       const stamp = nowIso();
-      const existing = input.id ? await db.tasks.get(input.id) : null;
+      const existing = input.id ? tasks.find((task) => task.id === input.id) : null;
       const wasDone = Boolean(existing && (existing.boardState === "done" || existing.progress >= 100));
-      const task: Task = normalizeProgress({
+      const task = normalizeProgress({
         id: input.id ?? uid("task"),
-        userId: input.userId ?? existing?.userId ?? null,
+        userId: userId ?? existing?.userId ?? null,
         title: input.title.trim(),
         notes: input.notes ?? existing?.notes ?? "",
         category: input.category ?? existing?.category ?? "",
@@ -113,22 +252,20 @@ export function useLuckyList() {
         updatedAt: stamp,
         subtasks: input.subtasks ?? existing?.subtasks ?? [],
       });
+
       if (task.boardState === "done" || task.progress >= 100) {
         task.progress = 100;
         task.boardState = "done";
         task.completedAt = task.completedAt ?? stamp;
       }
-      await db.tasks.put(task);
-      await enqueueTask(task);
+
+      await persistTask(task);
+
       const nextTask = !wasDone ? createNextRecurringTask(task) : null;
-      if (nextTask) {
-        await db.tasks.put(nextTask);
-        await enqueueTask(nextTask);
-      }
-      await refresh();
+      if (nextTask) await persistTask({ ...nextTask, userId: userId ?? null });
       return task;
     },
-    [refresh],
+    [persistTask, tasks, userId],
   );
 
   const moveTask = useCallback(
@@ -145,12 +282,9 @@ export function useLuckyList() {
 
   const deleteTask = useCallback(
     async (task: Task) => {
-      const updated = { ...task, deletedAt: nowIso(), updatedAt: nowIso() };
-      await db.tasks.put(updated);
-      await enqueueTask(updated, "delete");
-      await refresh();
+      await persistTask({ ...task, deletedAt: nowIso(), updatedAt: nowIso() });
     },
-    [refresh],
+    [persistTask],
   );
 
   const archiveTask = useCallback(
@@ -166,7 +300,7 @@ export function useLuckyList() {
       await saveTask({
         ...task,
         id: newId,
-        title: `${task.title} (copy)`,
+        title: `${task.title} (สำเนา)`,
         progress: 0,
         boardState: "todo",
         completedAt: null,
@@ -206,13 +340,32 @@ export function useLuckyList() {
 
   const saveSettings = useCallback(
     async (patch: Partial<UserSettings>) => {
-      const updated = { ...settings, ...patch, updatedAt: nowIso() };
-      await db.settings.put(updated);
-      await enqueueSettings(updated);
-      setSettings(updated);
-      return updated;
+      const updated = {
+        ...settings,
+        ...patch,
+        id: userId ? `settings_${userId}` : settings.id,
+        userId: userId ?? settings.userId ?? null,
+        updatedAt: nowIso(),
+      };
+
+      const repo = await requireWritableCloud();
+      if (repo) {
+        const saved = await repo.saveSettings(updated);
+        await afterCloudWrite("บันทึกการตั้งค่าแล้ว");
+        return saved;
+      }
+
+      if (cloudState === "local-preview") {
+        await writeLocalPreviewSettings(updated);
+        await refreshLocalPreview();
+        return updated;
+      }
+
+      setCloudState("error");
+      setCloudMessage("ต้องเชื่อมต่อข้อมูลออนไลน์ก่อนบันทึกการตั้งค่า");
+      throw new Error("ต้องเชื่อมต่อข้อมูลออนไลน์ก่อนบันทึกการตั้งค่า");
     },
-    [settings],
+    [afterCloudWrite, cloudState, refreshLocalPreview, requireWritableCloud, settings, userId],
   );
 
   const quickAdd = useCallback(
@@ -229,39 +382,9 @@ export function useLuckyList() {
     [saveSettings, saveTask, settings.categories],
   );
 
-  const runSync = useCallback(async () => {
-    if (!navigator.onLine) {
-      setSyncState("offline");
-      setSyncMessage("Offline - changes are saved locally");
-      return;
-    }
-    const client = createClient();
-    if (!client) {
-      setSyncState("idle");
-      setSyncMessage("PIN local mode - backup JSON for portability");
-      return;
-    }
-    const { data } = await client.auth.getSession();
-    if (!data.session?.user.id) {
-      setSyncState("idle");
-      setSyncConnected(false);
-      setSyncMessage("PIN local mode - Supabase sync optional");
-      return;
-    }
-    setSyncConnected(true);
-    setSyncState("syncing");
-    setSyncMessage("Syncing...");
-    try {
-      const result = await syncWithSupabase(client, data.session.user.id);
-      await refresh();
-      setSyncState("synced");
-      setSyncConnected(true);
-      setSyncMessage(`Synced ${result.pushed} up / ${result.pulled} down`);
-    } catch (error) {
-      setSyncState("error");
-      setSyncMessage(error instanceof Error ? error.message : "Sync failed");
-    }
-  }, [refresh]);
+  const refresh = useCallback(async () => {
+    await refreshCloud();
+  }, [refreshCloud]);
 
   const createBackupPayload = useCallback(
     () => ({
@@ -281,12 +404,8 @@ export function useLuckyList() {
 
   const backupNow = useCallback(
     async (download = false) => {
-      const stamp = nowIso();
       const content = JSON.stringify(createBackupPayload(), null, 2);
-      await Promise.all([
-        db.meta.put({ key: "latest_backup_json", value: content }),
-        db.meta.put({ key: "last_backup_at", value: stamp }),
-      ]);
+      const stamp = await markLegacyBackup(content);
       setLastBackupAt(stamp);
       if (download) {
         downloadText(
@@ -313,20 +432,17 @@ export function useLuckyList() {
   }, [backupNow]);
 
   const exportLatestLocalBackup = useCallback(async () => {
-    const latest = await db.meta.get("latest_backup_json");
-    if (!latest?.value) {
-      await backupNow(true);
-      return;
-    }
+    const content = JSON.stringify(createBackupPayload(), null, 2);
+    await markLegacyBackup(content);
     downloadText(
       `Lucky_List_Backup_${new Date().toISOString().slice(0, 10)}.json`,
-      latest.value,
+      content,
       "application/json;charset=utf-8",
     );
-  }, [backupNow]);
+  }, [createBackupPayload]);
 
   const exportCsv = useCallback(() => {
-    const headers = ["ID", "Title", "Category", "Priority", "Progress", "Status", "Start", "Due", "Reminder", "Repeat", "Completed", "Notes"];
+    const headers = ["ID", "ชื่องาน", "หมวดหมู่", "ความสำคัญ", "ความคืบหน้า", "สถานะ", "เริ่ม", "กำหนดส่ง", "เตือน", "ทำซ้ำ", "เสร็จเมื่อ", "รายละเอียด"];
     downloadText(
       `Lucky_List_Report_${new Date().toISOString().slice(0, 10)}.csv`,
       `\uFEFF${[headers.join(","), ...tasks.map(taskToCsvRow)].join("\n")}`,
@@ -337,9 +453,19 @@ export function useLuckyList() {
   const importNormalized = useCallback(
     async (normalized: NormalizedImport) => {
       if (normalized.tasks.length) {
-        await db.tasks.bulkPut(normalized.tasks);
-        for (const task of normalized.tasks) await enqueueTask(task);
+        if (activeRepository && userId) {
+          setCloudState("saving");
+          setCloudMessage("กำลังนำเข้างาน...");
+          await activeRepository.importTasks(normalized.tasks.map((task) => ({ ...task, userId })));
+          await afterCloudWrite(`นำเข้างาน ${normalized.tasks.length} งานแล้ว`);
+        } else if (cloudState === "local-preview") {
+          for (const task of normalized.tasks) await writeLocalPreviewTask(task);
+          await refreshLocalPreview();
+        } else {
+          throw new Error("ต้องเชื่อมต่อข้อมูลออนไลน์ก่อนนำเข้างาน");
+        }
       }
+
       if (Object.keys(normalized.settings).length) {
         await saveSettings({
           categories: normalized.settings.categories ?? settings.categories,
@@ -349,10 +475,10 @@ export function useLuckyList() {
           autoBackupMinutes: normalized.settings.autoBackupMinutes ?? settings.autoBackupMinutes,
         });
       }
-      await refresh();
+
       return normalized;
     },
-    [refresh, saveSettings, settings],
+    [activeRepository, afterCloudWrite, cloudState, refreshLocalPreview, saveSettings, settings, userId],
   );
 
   const importFile = useCallback(
@@ -363,15 +489,41 @@ export function useLuckyList() {
     [importNormalized],
   );
 
+  const addDemoTasks = useCallback(
+    async (count = 50) => {
+      const demoTasks = createDemoTasks(count).map((task) => ({ ...task, userId: userId ?? null }));
+      if (activeRepository && userId) {
+        setCloudState("saving");
+        setCloudMessage(`กำลังเพิ่มงานตัวอย่าง ${count} งาน...`);
+        await activeRepository.importTasks(demoTasks);
+        await afterCloudWrite(`เพิ่มงานตัวอย่าง ${demoTasks.length} งานแล้ว`);
+      } else if (cloudState === "local-preview") {
+        for (const task of demoTasks) await writeLocalPreviewTask(task);
+        await refreshLocalPreview();
+      } else {
+        throw new Error("ต้องเชื่อมต่อข้อมูลออนไลน์ก่อนเพิ่มงานตัวอย่าง");
+      }
+      return demoTasks;
+    },
+    [activeRepository, afterCloudWrite, cloudState, refreshLocalPreview, userId],
+  );
+
+  useEffect(() => {
+    if (booting || activeRepository || localPreviewTasks.length) return;
+    if (cloudState !== "local-preview") return;
+    const seedTasks = createSeedTasks();
+    void Promise.all(seedTasks.map(writeLocalPreviewTask)).then(refreshLocalPreview);
+  }, [activeRepository, booting, cloudState, localPreviewTasks.length, refreshLocalPreview]);
+
   const visibleTasks = useMemo(() => tasks.filter((task) => !task.deletedAt), [tasks]);
 
   return {
     tasks: visibleTasks,
     settings,
     loading,
-    syncState,
-    syncMessage,
-    syncConnected,
+    cloudState,
+    cloudMessage,
+    cloudConnected,
     isAuthed,
     saveTask,
     moveTask,
@@ -381,12 +533,13 @@ export function useLuckyList() {
     cloneTask,
     updateSubtask,
     saveSettings,
-    runSync,
+    refreshCloud,
     exportJson,
     backupNow,
     exportLatestLocalBackup,
     exportCsv,
     importFile,
+    addDemoTasks,
     lastBackupAt,
     refresh,
   };
