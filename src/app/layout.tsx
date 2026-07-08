@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Sans_Thai } from "next/font/google";
 import { AppQueryProvider } from "@/components/app/query-provider";
+import { ServiceWorkerCleanup } from "@/components/app/service-worker-cleanup";
 import "./globals.css";
 
 const geist = Geist({
@@ -44,7 +45,10 @@ export default function RootLayout({
       className={`${geist.variable} ${notoThai.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AppQueryProvider>{children}</AppQueryProvider>
+        <AppQueryProvider>
+          <ServiceWorkerCleanup />
+          {children}
+        </AppQueryProvider>
       </body>
     </html>
   );
