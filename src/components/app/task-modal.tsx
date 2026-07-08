@@ -26,22 +26,25 @@ function toDateTimeLocal(value?: string | null) {
 
 export function TaskModal(props: {
   task?: Task | null;
+  initialDate?: string | null;
   categories: string[];
   open: boolean;
   onClose: () => void;
   onSave: (task: Partial<Task> & Pick<Task, "title">) => Promise<void>;
 }) {
   if (!props.open) return null;
-  return <TaskModalForm key={props.task?.id ?? "new"} {...props} />;
+  return <TaskModalForm key={props.task?.id ?? props.initialDate ?? "new"} {...props} />;
 }
 
 function TaskModalForm({
   task,
+  initialDate,
   categories,
   onClose,
   onSave,
 }: {
   task?: Task | null;
+  initialDate?: string | null;
   categories: string[];
   open: boolean;
   onClose: () => void;
@@ -54,7 +57,7 @@ function TaskModalForm({
   const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? "Normal");
   const [boardState, setBoardState] = useState<BoardState>(task?.boardState ?? "todo");
   const [progress, setProgress] = useState(task?.progress ?? 0);
-  const [dueAt, setDueAt] = useState(task?.dueAt?.slice(0, 10) ?? "");
+  const [dueAt, setDueAt] = useState(task?.dueAt?.slice(0, 10) ?? initialDate ?? "");
   const [reminderAt, setReminderAt] = useState(toDateTimeLocal(task?.reminderAt));
   const [repeat, setRepeat] = useState<RepeatFrequency>(task?.repeatRule.frequency ?? "none");
   const [subtasks, setSubtasks] = useState<Subtask[]>(task?.subtasks ?? []);

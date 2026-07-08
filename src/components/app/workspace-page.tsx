@@ -158,12 +158,61 @@ function boardActionClass(state: BoardState) {
   }[state];
 }
 
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function shiftMonth(date: Date, delta: number) {
+  return new Date(date.getFullYear(), date.getMonth() + delta, 1);
+}
+
+function monthLabel(date: Date) {
+  return date.toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+}
+
+function longDateLabel(value: string) {
+  return new Date(`${value}T12:00:00`).toLocaleDateString("th-TH", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function buildCalendarDays(month: Date) {
+  const first = startOfMonth(month);
+  const mondayOffset = (first.getDay() + 6) % 7;
+  const cursor = new Date(first);
+  cursor.setDate(first.getDate() - mondayOffset);
+  return Array.from({ length: 42 }, (_, index) => {
+    const day = new Date(cursor);
+    day.setDate(cursor.getDate() + index);
+    return {
+      key: dateKey(day),
+      date: day,
+      inMonth: day.getMonth() === month.getMonth(),
+    };
+  });
+}
+
+function taskCalendarKeys(task: Task) {
+  return [task.dueAt?.slice(0, 10), task.startDate, task.reminderAt?.slice(0, 10)].filter(Boolean) as string[];
+}
+
 export function WorkspacePage({ initialView }: { initialView: AppView }) {
   const pathname = usePathname();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [newTaskDate, setNewTaskDate] = useState<string | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -178,6 +227,8 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [reviewNow] = useState(() => Date.now());
   const [reviewStage, setReviewStage] = useState<ReviewStageKey>("inbox");
+  const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(new Date()));
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => dateKey(new Date()));
   const {
     tasks,
     settings: userSettings,
@@ -398,10 +449,19 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
   const currentReviewTask = currentReviewStage.tasks[0] ?? null;
   function openCreate() {
     setEditingTask(null);
+    setNewTaskDate(null);
+    setModalOpen(true);
+  }
+
+  function openCreateForDate(value: string) {
+    setSelectedCalendarDate(value);
+    setEditingTask(null);
+    setNewTaskDate(value);
     setModalOpen(true);
   }
 
   function openEdit(task: Task) {
+    setNewTaskDate(null);
     setEditingTask(task);
     setModalOpen(true);
   }
@@ -412,6 +472,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
       const task = tasks.find((item) => item.id === taskId);
       if (!task) return;
       setNotificationOpen(false);
+      setNewTaskDate(null);
       setEditingTask(task);
       setModalOpen(true);
     }
@@ -893,8 +954,12 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
       <TaskModal
         open={modalOpen}
         task={editingTask}
+        initialDate={editingTask ? null : newTaskDate}
         categories={categories}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setNewTaskDate(null);
+        }}
         onSave={async (task) => {
           await saveTask(task);
         }}
@@ -1392,36 +1457,188 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
   }
 
   function renderCalendar() {
-    const dated = activeTasks.filter((task) => task.dueAt).sort(taskSort);
+    const calendarDays = buildCalendarDays(calendarMonth);
+    const today = dateKey(new Date());
+    const tasksByDate = new Map<string, Task[]>();
+
+    activeTasks.forEach((task) => {
+      taskCalendarKeys(task).forEach((key) => {
+        const list = tasksByDate.get(key) ?? [];
+        list.push(task);
+        tasksByDate.set(key, list);
+      });
+    });
+
+    tasksByDate.forEach((items, key) => {
+      tasksByDate.set(key, [...new Map(items.map((task) => [task.id, task])).values()].sort(taskSort));
+    });
+
+    const selectedTasks = tasksByDate.get(selectedCalendarDate) ?? [];
+    const monthTaskCount = new Set(
+      calendarDays
+        .filter((day) => day.inMonth)
+        .flatMap((day) => (tasksByDate.get(day.key) ?? []).map((task) => task.id)),
+    ).size;
+    const weekDays = ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"];
+
     return (
-      <section className="grid gap-4 xl:grid-cols-[1fr_340px]">
-        <Panel className="p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-black">Timeline งาน</h2>
-            <SlidersHorizontal className="text-[var(--muted)]" size={18} />
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <Panel className="overflow-hidden p-0">
+          <div className="flex flex-col gap-3 border-b border-[var(--border)] p-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-black text-[var(--muted)]">ปฏิทินงาน</p>
+              <h2 className="text-2xl font-black">{monthLabel(calendarMonth)}</h2>
+              <p className="mt-1 text-sm text-[var(--muted)]">ดูงานตามวัน กดวันที่เพื่อดูรายละเอียด หรือเพิ่มงานลงวันนั้นได้ทันที</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" className="px-3" onClick={() => setCalendarMonth((month) => shiftMonth(month, -1))}>
+                <ChevronRight size={16} className="rotate-180" />
+              </Button>
+              <Button
+                variant="secondary"
+                className="px-3"
+                onClick={() => {
+                  const now = new Date();
+                  setCalendarMonth(startOfMonth(now));
+                  setSelectedCalendarDate(dateKey(now));
+                }}
+              >
+                วันนี้
+              </Button>
+              <Button variant="secondary" className="px-3" onClick={() => setCalendarMonth((month) => shiftMonth(month, 1))}>
+                <ChevronRight size={16} />
+              </Button>
+              <Button onClick={() => openCreateForDate(selectedCalendarDate)}>
+                <CirclePlus size={16} />
+                เพิ่มงาน
+              </Button>
+            </div>
           </div>
-          <div className="grid gap-2">
-            {dated.map((task) => (
-              <button key={task.id} onClick={() => openEdit(task)} className="grid gap-2 rounded-lg border border-[var(--border)] p-3 text-left transition hover:bg-[var(--surface-strong)] md:grid-cols-[130px_1fr_90px]">
-                <span className="text-sm font-black text-[var(--foreground)]">{formatThaiDate(task.dueAt)}</span>
-                <span>
-                  <span className="block font-bold">{task.title}</span>
-                  <span className="text-xs text-[var(--muted)]">{repeatLabel(task.repeatRule)}</span>
-                </span>
-                <span className={cn("rounded-lg border px-2 py-1 text-center text-xs font-black", priorityClass(task.priority))}>{priorityLabel(task.priority)}</span>
-              </button>
+
+          <div className="grid grid-cols-7 border-b border-[var(--border)] bg-[var(--surface-strong)] text-center text-[11px] font-black text-[var(--muted)]">
+            {weekDays.map((day) => (
+              <div key={day} className="border-r border-[var(--border)] py-2 last:border-r-0">
+                {day}
+              </div>
             ))}
           </div>
-        </Panel>
-        <Panel className="p-4">
-          <h2 className="mb-4 text-lg font-black">เลยกำหนด</h2>
-          <div className="grid gap-2">
-            {overdueTasks.map((task) => (
-              <TaskMini key={task.id} task={task} onClick={() => openEdit(task)} />
-            ))}
-            {!overdueTasks.length && <EmptyState title="ไม่มีงานเลยกำหนด" detail="สถานะดีมากในตอนนี้" />}
+
+          <div className="grid grid-cols-7">
+            {calendarDays.map((day, index) => {
+              const dayTasks = tasksByDate.get(day.key) ?? [];
+              const selected = selectedCalendarDate === day.key;
+              const isToday = today === day.key;
+              const visibleTasks = dayTasks.slice(0, 3);
+              return (
+                <div
+                  key={day.key}
+                  className={cn(
+                    "min-h-[132px] border-r border-b border-[var(--border)] p-1.5 md:min-h-[150px]",
+                    index % 7 === 6 && "border-r-0",
+                    !day.inMonth && "bg-[var(--surface-strong)]/45 text-[var(--muted)]",
+                    selected && "bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--foreground)]",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCalendarDate(day.key);
+                        if (!day.inMonth) setCalendarMonth(startOfMonth(day.date));
+                      }}
+                      className={cn(
+                        "focus-ring flex h-7 min-w-7 items-center justify-center rounded-md text-xs font-black",
+                        isToday ? "bg-[var(--foreground)] text-[var(--background)]" : "hover:bg-[var(--surface-strong)]",
+                      )}
+                    >
+                      {day.date.getDate()}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!day.inMonth) setCalendarMonth(startOfMonth(day.date));
+                        openCreateForDate(day.key);
+                      }}
+                      className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--muted)] transition hover:bg-[var(--surface-strong)] hover:text-[var(--foreground)]"
+                      aria-label={`เพิ่มงานวันที่ ${day.key}`}
+                      title="เพิ่มงานวันนี้"
+                    >
+                      <CirclePlus size={13} />
+                    </button>
+                  </div>
+                  <div className="mt-1 grid gap-1">
+                    {visibleTasks.map((task) => (
+                      <button
+                        key={task.id}
+                        type="button"
+                        onClick={() => openEdit(task)}
+                        className={cn("focus-ring truncate rounded-md border px-1.5 py-1 text-left text-[10px] font-black transition hover:bg-[var(--surface)]", priorityClass(task.priority))}
+                        title={task.title}
+                      >
+                        {task.title}
+                      </button>
+                    ))}
+                    {dayTasks.length > visibleTasks.length && (
+                      <span className="rounded-md bg-[var(--surface-strong)] px-1.5 py-1 text-[10px] font-black text-[var(--muted)]">
+                        +{dayTasks.length - visibleTasks.length} งาน
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Panel>
+
+        <div className="grid gap-4">
+          <Panel className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black text-[var(--muted)]">วันที่เลือก</p>
+                <h2 className="mt-1 text-lg font-black">{longDateLabel(selectedCalendarDate)}</h2>
+                <p className="mt-1 text-sm text-[var(--muted)]">{selectedTasks.length ? `${selectedTasks.length} งานในวันนี้` : "ยังไม่มีงานในวันนี้"}</p>
+              </div>
+              <Button className="px-3" onClick={() => openCreateForDate(selectedCalendarDate)}>
+                <CirclePlus size={15} />
+              </Button>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {selectedTasks.map((task) => (
+                <button key={task.id} onClick={() => openEdit(task)} className="rounded-lg border border-[var(--border)] p-3 text-left transition hover:bg-[var(--surface-strong)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black">{task.title}</p>
+                      <p className="mt-1 truncate text-xs text-[var(--muted)]">
+                        {task.dueAt?.slice(0, 10) === selectedCalendarDate ? "กำหนดส่ง" : task.startDate === selectedCalendarDate ? "เริ่มงาน" : "แจ้งเตือน"} · {categoryLabel(task.category)} · {repeatLabel(task.repeatRule)}
+                      </p>
+                    </div>
+                    <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-black", priorityClass(task.priority))}>{priorityLabel(task.priority)}</span>
+                  </div>
+                </button>
+              ))}
+              {!selectedTasks.length && <EmptyState title="วันนี้ยังว่าง" detail="กด + เพื่อเพิ่มงานลงวันที่เลือกได้เลย" />}
+            </div>
+          </Panel>
+
+          <Panel className="p-4">
+            <h2 className="text-lg font-black">ภาพรวมเดือนนี้</h2>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <BoardMetric label="งานในเดือน" value={monthTaskCount} detail="รายการ" tone="strong" />
+              <BoardMetric label="เลยกำหนด" value={overdueTasks.length} detail="ต้องจัดการ" tone={overdueTasks.length ? "danger" : "success"} />
+              <BoardMetric label="วันนี้" value={todayTasks.length} detail="วันนี้" tone="warning" />
+            </div>
+          </Panel>
+
+          <Panel className="p-4">
+            <h2 className="mb-4 text-lg font-black">เลยกำหนด</h2>
+            <div className="grid gap-2">
+              {overdueTasks.slice(0, 8).map((task) => (
+                <TaskMini key={task.id} task={task} onClick={() => openEdit(task)} />
+              ))}
+              {!overdueTasks.length && <EmptyState title="ไม่มีงานเลยกำหนด" detail="สถานะดีมากในตอนนี้" />}
+            </div>
+          </Panel>
+        </div>
       </section>
     );
   }
