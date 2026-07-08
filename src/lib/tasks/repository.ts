@@ -11,6 +11,8 @@ import {
   taskToRow,
 } from "./mappers";
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export type TaskRepository = {
   listTasks: () => Promise<Task[]>;
   getSettings: () => Promise<UserSettings>;
@@ -21,22 +23,41 @@ export type TaskRepository = {
   importTasks: (tasks: Task[]) => Promise<Task[]>;
 };
 
+function ensureUuid(value?: string | null) {
+  return value && uuidPattern.test(value) ? value : crypto.randomUUID();
+}
+
+function normalizeTaskIdsForCloud(task: Task, userId: string): Task {
+  const taskId = ensureUuid(task.id);
+  return {
+    ...task,
+    id: taskId,
+    userId,
+    subtasks: task.subtasks.map((subtask) => ({
+      ...subtask,
+      id: ensureUuid(subtask.id),
+      taskId,
+    })),
+  };
+}
+
 export function createTaskRepository(client: SupabaseClient<Database>, userId: string): TaskRepository {
   async function saveTask(task: Task) {
-    const taskRow = taskToRow(task, userId);
+    const cloudTask = normalizeTaskIdsForCloud(task, userId);
+    const taskRow = taskToRow(cloudTask, userId);
     const { error: taskError } = await client.from("tasks").upsert(taskRow);
     if (taskError) throw taskError;
 
-    const { error: deleteSubtasksError } = await client.from("subtasks").delete().eq("task_id", task.id);
+    const { error: deleteSubtasksError } = await client.from("subtasks").delete().eq("task_id", cloudTask.id);
     if (deleteSubtasksError) throw deleteSubtasksError;
 
-    const subtaskRows = task.subtasks.filter((subtask) => !subtask.deletedAt).map((subtask) => subtaskToRow(subtask, userId));
+    const subtaskRows = cloudTask.subtasks.filter((subtask) => !subtask.deletedAt).map((subtask) => subtaskToRow(subtask, userId));
     if (subtaskRows.length) {
       const { error: subtaskError } = await client.from("subtasks").insert(subtaskRows);
       if (subtaskError) throw subtaskError;
     }
 
-    return task;
+    return cloudTask;
   }
 
   return {
@@ -114,4 +135,3 @@ export function createTaskRepository(client: SupabaseClient<Database>, userId: s
     },
   };
 }
-

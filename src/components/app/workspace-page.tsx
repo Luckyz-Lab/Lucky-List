@@ -70,6 +70,7 @@ import {
   repeatLabel,
   taskSort,
   nowIso,
+  uid,
 } from "@/lib/utils";
 import { TaskModal } from "./task-modal";
 
@@ -330,7 +331,15 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
   }
 
   function actionErrorMessage(error: unknown, fallback = "ทำรายการไม่สำเร็จ") {
-    return error instanceof Error ? error.message : fallback;
+    if (error instanceof Error) return error.message;
+    if (error && typeof error === "object") {
+      const record = error as { message?: unknown; details?: unknown; code?: unknown };
+      const message = typeof record.message === "string" ? record.message : "";
+      const details = typeof record.details === "string" ? record.details : "";
+      const code = typeof record.code === "string" ? record.code : "";
+      return [message, details, code && `code: ${code}`].filter(Boolean).join(" - ") || fallback;
+    }
+    return fallback;
   }
 
   async function handleQuickAdd(text: string) {
@@ -539,7 +548,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
         startDate: new Date().toISOString().slice(0, 10),
         repeatRule: { frequency: "none" },
         subtasks: template.subtasks.map((title, index) => ({
-          id: `subtask_${crypto.randomUUID()}`,
+          id: uid("subtask"),
           taskId: "",
           title,
           progress: 0,

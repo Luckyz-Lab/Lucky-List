@@ -3,6 +3,7 @@ import { savePin, verifyPin, resetPin } from "@/lib/auth/pin";
 import { parseImportFileText } from "@/lib/importers";
 import { parseQuickAdd } from "@/lib/quick-add";
 import { createNextRecurringTask } from "@/lib/recurrence";
+import { createDemoTasks } from "@/lib/sample-data";
 import { rowToTask, taskToRow } from "@/lib/tasks/mappers";
 import { taskSchema } from "@/lib/tasks/schema";
 import type { Task } from "@/lib/types";
@@ -38,6 +39,8 @@ const baseTask: Task = {
     },
   ],
 };
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 beforeEach(() => {
   const store = new Map<string, string>();
@@ -119,5 +122,17 @@ describe("task utilities", () => {
     expect(next?.boardState).toBe("todo");
     expect(next?.progress).toBe(0);
     expect(next?.dueAt).toBe("2026-07-15");
+  });
+
+  it("creates Supabase-compatible UUIDs for demo tasks", () => {
+    const demoTasks = createDemoTasks(8);
+    expect(demoTasks).toHaveLength(8);
+    for (const task of demoTasks) {
+      expect(task.id).toMatch(uuidPattern);
+      for (const subtask of task.subtasks) {
+        expect(subtask.id).toMatch(uuidPattern);
+        expect(subtask.taskId).toBe(task.id);
+      }
+    }
   });
 });
