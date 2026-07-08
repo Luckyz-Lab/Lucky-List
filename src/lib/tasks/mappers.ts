@@ -102,6 +102,9 @@ export function settingsToRow(settings: UserSettings, userId: string): SettingsI
     deadline_threshold_days: normalized.deadlineThresholdDays,
     categories: normalized.categories,
     notifications_enabled: normalized.notificationsEnabled,
+    default_reminder_mode: normalized.defaultReminderMode,
+    daily_digest_enabled: normalized.dailyDigestEnabled,
+    daily_digest_time: normalized.dailyDigestTime,
     auto_backup_minutes: normalized.autoBackupMinutes,
     last_synced_at: normalized.lastSyncedAt ?? null,
     updated_at: normalized.updatedAt,
@@ -116,6 +119,9 @@ export function rowToSettings(row: SettingsRow): UserSettings {
     deadlineThresholdDays: row.deadline_threshold_days,
     categories: row.categories,
     notificationsEnabled: row.notifications_enabled,
+    defaultReminderMode: row.default_reminder_mode ?? "day-start",
+    dailyDigestEnabled: row.daily_digest_enabled ?? true,
+    dailyDigestTime: row.daily_digest_time ?? "09:00",
     autoBackupMinutes: row.auto_backup_minutes,
     lastSyncedAt: row.last_synced_at,
     updatedAt: row.updated_at,
@@ -131,4 +137,3 @@ export function createDefaultSettingsForUser(userId: string): UserSettings {
     updatedAt: nowIso(),
   };
 }
-

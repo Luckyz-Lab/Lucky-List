@@ -3,6 +3,7 @@ export type BoardState = "todo" | "wip" | "done";
 export type RepeatFrequency = "none" | "daily" | "weekly" | "monthly";
 export type CloudState = "checking" | "ready" | "saving" | "error" | "offline" | "local-preview";
 export type AppView = "dashboard" | "focus" | "board" | "tasks" | "calendar" | "archive" | "settings";
+export type DefaultReminderMode = "none" | "due-time" | "30-min-before" | "day-start";
 
 export interface RepeatRule {
   frequency: RepeatFrequency;
@@ -56,6 +57,9 @@ export interface UserSettings {
   deadlineThresholdDays: number;
   categories: string[];
   notificationsEnabled: boolean;
+  defaultReminderMode: DefaultReminderMode;
+  dailyDigestEnabled: boolean;
+  dailyDigestTime: string;
   autoBackupMinutes: number;
   lastSyncedAt?: string | null;
   updatedAt: string;

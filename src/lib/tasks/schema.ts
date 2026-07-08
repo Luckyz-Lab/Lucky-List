@@ -3,6 +3,7 @@ import { z } from "zod";
 export const taskPrioritySchema = z.enum(["Low", "Normal", "High", "Urgent"]);
 export const boardStateSchema = z.enum(["todo", "wip", "done"]);
 export const repeatFrequencySchema = z.enum(["none", "daily", "weekly", "monthly"]);
+export const defaultReminderModeSchema = z.enum(["none", "due-time", "30-min-before", "day-start"]);
 
 export const repeatRuleSchema = z.object({
   frequency: repeatFrequencySchema,
@@ -48,6 +49,9 @@ export const userSettingsSchema = z.object({
   deadlineThresholdDays: z.number().int().min(1).max(31),
   categories: z.array(z.string().min(1)),
   notificationsEnabled: z.boolean(),
+  defaultReminderMode: defaultReminderModeSchema.default("day-start"),
+  dailyDigestEnabled: z.boolean().default(true),
+  dailyDigestTime: z.string().regex(/^\d{2}:\d{2}$/).default("09:00"),
   autoBackupMinutes: z.number().int().min(0).max(1440),
   lastSyncedAt: z.string().nullable().optional(),
   updatedAt: z.string().min(1),
@@ -67,4 +71,3 @@ export const importPayloadSchema = z.object({
   tasks: z.array(z.unknown()).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
 });
-

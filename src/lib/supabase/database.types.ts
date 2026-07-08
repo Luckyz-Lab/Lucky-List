@@ -115,6 +115,9 @@ export type Database = {
           deadline_threshold_days: number;
           categories: string[];
           notifications_enabled: boolean;
+          default_reminder_mode: "none" | "due-time" | "30-min-before" | "day-start";
+          daily_digest_enabled: boolean;
+          daily_digest_time: string;
           auto_backup_minutes: number;
           last_synced_at: string | null;
           updated_at: string;
@@ -126,6 +129,9 @@ export type Database = {
           deadline_threshold_days?: number;
           categories?: string[];
           notifications_enabled?: boolean;
+          default_reminder_mode?: "none" | "due-time" | "30-min-before" | "day-start";
+          daily_digest_enabled?: boolean;
+          daily_digest_time?: string;
           auto_backup_minutes?: number;
           last_synced_at?: string | null;
           updated_at?: string;

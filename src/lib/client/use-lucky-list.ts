@@ -17,7 +17,7 @@ import {
   writeLocalPreviewTask,
 } from "@/lib/tasks/legacy-migration";
 import { createTaskRepository, type TaskRepository } from "@/lib/tasks/repository";
-import type { BoardState, CloudState, Task, TaskDraft, UserSettings } from "@/lib/types";
+import type { BoardState, CloudState, DefaultReminderMode, Task, TaskDraft, UserSettings } from "@/lib/types";
 import { downloadText, nowIso, taskToCsvRow, uid } from "@/lib/utils";
 
 function normalizeProgress(task: Task): Task {
@@ -38,6 +38,20 @@ function cloudQueryKeys(userId: string | null) {
     tasks: ["lucky-list", "tasks", userId] as const,
     settings: ["lucky-list", "settings", userId] as const,
   };
+}
+
+function defaultReminderAt(dueAt: string | null | undefined, mode: DefaultReminderMode, dayStartTime: string) {
+  if (!dueAt || mode === "none") return null;
+  const datePart = dueAt.slice(0, 10);
+  const timePart = dueAt.includes("T") ? dueAt.slice(11, 16) : dayStartTime || "09:00";
+  const reminder = new Date(`${datePart}T${timePart || "09:00"}:00`);
+  if (Number.isNaN(reminder.getTime())) return null;
+  if (mode === "30-min-before") reminder.setMinutes(reminder.getMinutes() - 30);
+  if (mode === "day-start") {
+    const [hours, minutes] = (dayStartTime || "09:00").split(":").map(Number);
+    reminder.setHours(Number.isFinite(hours) ? hours : 9, Number.isFinite(minutes) ? minutes : 0, 0, 0);
+  }
+  return reminder.toISOString();
 }
 
 export function useLuckyList() {
@@ -232,6 +246,8 @@ export function useLuckyList() {
       const stamp = nowIso();
       const existing = input.id ? tasks.find((task) => task.id === input.id) : null;
       const wasDone = Boolean(existing && (existing.boardState === "done" || existing.progress >= 100));
+      const dueAt = input.dueAt ?? existing?.dueAt ?? null;
+      const hasExplicitReminder = Object.prototype.hasOwnProperty.call(input, "reminderAt");
       const task = normalizeProgress({
         id: input.id ?? uid("task"),
         userId: userId ?? existing?.userId ?? null,
@@ -242,8 +258,10 @@ export function useLuckyList() {
         progress: input.progress ?? existing?.progress ?? 0,
         boardState: input.boardState ?? existing?.boardState ?? "todo",
         startDate: input.startDate ?? existing?.startDate ?? new Date().toISOString().slice(0, 10),
-        dueAt: input.dueAt ?? existing?.dueAt ?? null,
-        reminderAt: input.reminderAt ?? existing?.reminderAt ?? null,
+        dueAt,
+        reminderAt: hasExplicitReminder
+          ? input.reminderAt ?? null
+          : existing?.reminderAt ?? defaultReminderAt(dueAt, settings.defaultReminderMode, settings.dailyDigestTime),
         repeatRule: input.repeatRule ?? existing?.repeatRule ?? { frequency: "none" },
         archivedAt: input.archivedAt ?? existing?.archivedAt ?? null,
         deletedAt: input.deletedAt ?? existing?.deletedAt ?? null,
@@ -265,7 +283,7 @@ export function useLuckyList() {
       if (nextTask) await persistTask({ ...nextTask, userId: userId ?? null });
       return task;
     },
-    [persistTask, tasks, userId],
+    [persistTask, settings.dailyDigestTime, settings.defaultReminderMode, tasks, userId],
   );
 
   const moveTask = useCallback(
@@ -472,6 +490,9 @@ export function useLuckyList() {
           deadlineThresholdDays: normalized.settings.deadlineThresholdDays ?? settings.deadlineThresholdDays,
           theme: normalized.settings.theme ?? settings.theme,
           notificationsEnabled: normalized.settings.notificationsEnabled ?? settings.notificationsEnabled,
+          defaultReminderMode: normalized.settings.defaultReminderMode ?? settings.defaultReminderMode,
+          dailyDigestEnabled: normalized.settings.dailyDigestEnabled ?? settings.dailyDigestEnabled,
+          dailyDigestTime: normalized.settings.dailyDigestTime ?? settings.dailyDigestTime,
           autoBackupMinutes: normalized.settings.autoBackupMinutes ?? settings.autoBackupMinutes,
         });
       }

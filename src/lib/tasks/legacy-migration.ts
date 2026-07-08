@@ -6,6 +6,19 @@ import { defaultSettings } from "@/lib/sample-data";
 
 const migratedKey = "lucky_migrated_to_cloud_v1";
 
+function normalizeSettings(settings?: UserSettings | null): UserSettings {
+  return {
+    ...defaultSettings,
+    ...settings,
+    categories: settings?.categories?.length ? settings.categories : defaultSettings.categories,
+    defaultReminderMode: settings?.defaultReminderMode ?? defaultSettings.defaultReminderMode,
+    dailyDigestEnabled: settings?.dailyDigestEnabled ?? defaultSettings.dailyDigestEnabled,
+    dailyDigestTime: settings?.dailyDigestTime ?? defaultSettings.dailyDigestTime,
+    notificationsEnabled: settings?.notificationsEnabled ?? defaultSettings.notificationsEnabled,
+    autoBackupMinutes: settings?.autoBackupMinutes ?? defaultSettings.autoBackupMinutes,
+  };
+}
+
 export async function readLegacyWorkspace() {
   const [tasks, settings, backupMeta] = await Promise.all([
     db.tasks.toArray(),
@@ -15,7 +28,7 @@ export async function readLegacyWorkspace() {
 
   return {
     tasks,
-    settings: settings ?? defaultSettings,
+    settings: normalizeSettings(settings),
     latestBackupJson: backupMeta?.value ?? null,
   };
 }
@@ -25,7 +38,7 @@ export async function writeLocalPreviewTask(task: Task) {
 }
 
 export async function writeLocalPreviewSettings(settings: UserSettings) {
-  await db.settings.put(settings);
+  await db.settings.put(normalizeSettings(settings));
 }
 
 export async function markLegacyBackup(content: string) {
@@ -73,4 +86,3 @@ export async function migrateLegacyWorkspaceToCloud(repository: TaskRepository, 
   localStorage.setItem(migratedKey, "true");
   return { migrated: true, count: activeTasks.length };
 }
-

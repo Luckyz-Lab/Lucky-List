@@ -48,7 +48,7 @@ import { Panel } from "@/components/ui/panel";
 import { CommandPalette } from "@/components/app/command-palette";
 import { QuickAddBar } from "@/components/app/quick-add-bar";
 import { WorkspaceShell, type WorkspaceNavItem } from "@/components/app/workspace-shell";
-import { useReminderNotifications } from "@/lib/client/use-reminder-notifications";
+import { type ReminderHistoryItem, useReminderNotifications } from "@/lib/client/use-reminder-notifications";
 import { useLuckyList } from "@/lib/client/use-lucky-list";
 import { lockPrivateSession } from "@/lib/auth/pin";
 import { matchesTaskQuery } from "@/lib/search-syntax";
@@ -165,6 +165,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [importNotice, setImportNotice] = useState("");
   const [undoAction, setUndoAction] = useState<{ label: string; run: () => Promise<void> } | null>(null);
@@ -234,7 +235,82 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     () => Array.from(new Set([...userSettings.categories, ...tasks.map((task) => task.category).filter(Boolean)])) as string[],
     [tasks, userSettings.categories],
   );
-  const reminders = useReminderNotifications(activeTasks, userSettings.notificationsEnabled);
+  const reminders = useReminderNotifications(activeTasks, userSettings.notificationsEnabled, {
+    dailyDigestEnabled: userSettings.dailyDigestEnabled,
+    dailyDigestTime: userSettings.dailyDigestTime,
+  });
+
+  const notificationItems = useMemo(() => {
+    const items: Array<{
+      id: string;
+      title: string;
+      detail: string;
+      tone: "danger" | "warning" | "success" | "neutral";
+      task?: Task;
+      history?: ReminderHistoryItem;
+    }> = [];
+
+    if (cloudState === "error" || cloudState === "offline") {
+      items.push({
+        id: "system-cloud",
+        title: cloudState === "offline" ? "ไม่มีอินเทอร์เน็ต" : "ระบบข้อมูลต้องตรวจสอบ",
+        detail: cloudMessage,
+        tone: "danger",
+      });
+    }
+
+    if (!lastBackupAt) {
+      items.push({
+        id: "system-backup",
+        title: "ยังไม่มีไฟล์สำรอง",
+        detail: "สำรอง JSON ไว้เป็นจุดกู้คืนเผื่อ session หรือ browser มีปัญหา",
+        tone: "warning",
+      });
+    }
+
+    overdueTasks.slice(0, 4).forEach((task) => {
+      items.push({
+        id: `overdue-${task.id}`,
+        title: task.title,
+        detail: `เลยกำหนด · ${categoryLabel(task.category)} · ${priorityLabel(task.priority)}`,
+        tone: "danger",
+        task,
+      });
+    });
+
+    todayTasks.slice(0, 4).forEach((task) => {
+      items.push({
+        id: `today-${task.id}`,
+        title: task.title,
+        detail: `วันนี้ · ${categoryLabel(task.category)} · ${priorityLabel(task.priority)}`,
+        tone: "warning",
+        task,
+      });
+    });
+
+    reminders.pendingReminders.slice(0, 4).forEach((task) => {
+      items.push({
+        id: `reminder-${task.id}`,
+        title: task.title,
+        detail: `ตั้งเตือนแล้ว · ${task.reminderAt ? formatThaiDate(task.reminderAt) : "เลื่อนเตือนอยู่"}`,
+        tone: "success",
+        task,
+      });
+    });
+
+    reminders.history.slice(0, 5).forEach((history) => {
+      items.push({
+        id: `history-${history.id}`,
+        title: history.title,
+        detail: history.body,
+        tone: history.kind === "digest" ? "neutral" : "success",
+        task: history.taskId ? activeTasks.find((task) => task.id === history.taskId) : undefined,
+        history,
+      });
+    });
+
+    return items;
+  }, [activeTasks, cloudMessage, cloudState, lastBackupAt, overdueTasks, reminders.history, reminders.pendingReminders, todayTasks]);
 
   const filteredTasks = useMemo(() => {
     return activeTasks
@@ -329,6 +405,20 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     setEditingTask(task);
     setModalOpen(true);
   }
+
+  useEffect(() => {
+    function handleOpenTask(event: Event) {
+      const taskId = (event as CustomEvent<{ taskId?: string }>).detail?.taskId;
+      const task = tasks.find((item) => item.id === taskId);
+      if (!task) return;
+      setNotificationOpen(false);
+      setEditingTask(task);
+      setModalOpen(true);
+    }
+
+    window.addEventListener("lucky-list-open-task", handleOpenTask);
+    return () => window.removeEventListener("lucky-list-open-task", handleOpenTask);
+  }, [tasks]);
 
   function actionErrorMessage(error: unknown, fallback = "ทำรายการไม่สำเร็จ") {
     if (error instanceof Error) return error.message;
@@ -425,6 +515,21 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     } catch (error) {
       setImportNotice(actionErrorMessage(error, "เปลี่ยนสถานะงานไม่สำเร็จ"));
     }
+  }
+
+  function handleOpenNotificationTask(task: Task) {
+    setNotificationOpen(false);
+    openEdit(task);
+  }
+
+  async function handleCompleteFromNotification(task: Task) {
+    await handleToggleDone(task);
+    setNotificationOpen(false);
+  }
+
+  function handleSnoozeNotification(task: Task, minutes: number) {
+    reminders.snoozeTask(task.id, minutes);
+    setImportNotice(minutes >= 1440 ? `เลื่อนเตือนเป็นพรุ่งนี้เช้า: ${task.title}` : `เลื่อนเตือน ${minutes} นาที: ${task.title}`);
   }
 
   async function handleMoveTask(task: Task, boardState: BoardState) {
@@ -683,8 +788,10 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
         cloudMessage={cloudMessage}
         cloudState={cloudState}
         navItems={navItems}
+        notificationCount={notificationItems.length}
         onCreate={openCreate}
         onOpenCommand={() => setCommandOpen(true)}
+        onOpenNotifications={() => setNotificationOpen((value) => !value)}
         onRefreshCloud={() => void handleRefreshCloud()}
         onSignOut={signOut}
         onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
@@ -702,6 +809,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
         {activeView === "archive" && renderArchive()}
         {activeView === "settings" && renderSettings()}
       </WorkspaceShell>
+      {notificationOpen && renderNotificationCenter()}
       {importNotice && (
         <div role="status" aria-live="polite" className="fixed right-3 top-20 z-50 max-w-sm rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-bold shadow-xl lg:top-auto lg:bottom-5">
           {importNotice}
@@ -1352,6 +1460,69 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     );
   }
 
+  function renderNotificationCenter() {
+    const toneClass = {
+      danger: "border-[var(--danger)] text-[var(--danger)]",
+      warning: "border-[var(--warning)] text-[var(--warning)]",
+      success: "border-[var(--success)] text-[var(--success)]",
+      neutral: "border-[var(--border)] text-[var(--muted)]",
+    };
+
+    return (
+      <Panel className="fixed right-3 top-20 z-50 max-h-[78vh] w-[min(420px,calc(100vw-24px))] overflow-hidden p-0 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[var(--border)] p-3">
+          <div>
+            <h2 className="text-base font-black">ศูนย์แจ้งเตือน</h2>
+            <p className="text-xs text-[var(--muted)]">วันนี้, งานเลยกำหนด, reminder และสถานะระบบ</p>
+          </div>
+          <div className="flex gap-1">
+            <button type="button" onClick={reminders.clearHistory} className="focus-ring rounded-md px-2 py-1 text-xs font-black text-[var(--muted)] hover:bg-[var(--surface-strong)]">
+              ล้างประวัติ
+            </button>
+            <button type="button" onClick={() => setNotificationOpen(false)} className="focus-ring rounded-md px-2 py-1 text-xs font-black text-[var(--muted)] hover:bg-[var(--surface-strong)]">
+              ปิด
+            </button>
+          </div>
+        </div>
+        <div className="max-h-[calc(78vh-68px)] overflow-y-auto p-2">
+          {!notificationItems.length && <EmptyState title="ยังไม่มีแจ้งเตือน" detail="ถ้ามีงานวันนี้ งานเลยกำหนด หรือ reminder ระบบจะแสดงตรงนี้" />}
+          {notificationItems.map((item) => (
+            <div key={item.id} className="mb-2 rounded-lg border border-[var(--border)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black">{item.title}</p>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-[var(--muted)]">{item.detail}</p>
+                </div>
+                <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-black", toneClass[item.tone])}>
+                  {item.tone === "danger" ? "ด่วน" : item.tone === "warning" ? "วันนี้" : item.tone === "success" ? "เตือน" : "ระบบ"}
+                </span>
+              </div>
+              {item.task && (
+                <div className="mt-3 flex flex-wrap gap-1">
+                  <button type="button" onClick={() => handleOpenNotificationTask(item.task!)} className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-black hover:bg-[var(--surface-strong)]">
+                    เปิดงาน
+                  </button>
+                  <button type="button" onClick={() => void handleCompleteFromNotification(item.task!)} className="focus-ring rounded-md border border-[var(--success)] px-2 py-1 text-xs font-black text-[var(--success)] hover:bg-[color-mix(in_oklab,var(--success)_8%,transparent)]">
+                    เสร็จแล้ว
+                  </button>
+                  <button type="button" onClick={() => handleSnoozeNotification(item.task!, 10)} className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-black text-[var(--muted)] hover:bg-[var(--surface-strong)]">
+                    +10 นาที
+                  </button>
+                  <button type="button" onClick={() => handleSnoozeNotification(item.task!, 60)} className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-black text-[var(--muted)] hover:bg-[var(--surface-strong)]">
+                    +1 ชม.
+                  </button>
+                  <button type="button" onClick={() => handleSnoozeNotification(item.task!, 1440)} className="focus-ring rounded-md border border-[var(--border)] px-2 py-1 text-xs font-black text-[var(--muted)] hover:bg-[var(--surface-strong)]">
+                    พรุ่งนี้
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Panel>
+    );
+  }
+
   function renderSettings() {
     return (
       <section className="grid gap-4 xl:grid-cols-2">
@@ -1429,6 +1600,32 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                 }}
                 className="h-5 w-5 accent-black dark:accent-white"
               />
+            </label>
+            <label className="grid gap-1 text-sm font-bold">
+              แจ้งเตือนอัตโนมัติเมื่อมีวันกำหนดส่ง
+              <select value={userSettings.defaultReminderMode} onChange={(event) => void handleSaveSettingsPatch({ defaultReminderMode: event.target.value as typeof userSettings.defaultReminderMode })} className="focus-ring rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+                <option value="none">ไม่ตั้งอัตโนมัติ</option>
+                <option value="day-start">เช้าวันนั้น</option>
+                <option value="due-time">ตามเวลาของกำหนดส่ง</option>
+                <option value="30-min-before">ก่อนกำหนด 30 นาที</option>
+              </select>
+              <span className="text-xs font-semibold text-[var(--muted)]">ใช้กับงานใหม่ที่มี due date และยังไม่ได้ตั้งเวลาเตือนเอง</span>
+            </label>
+            <label className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] p-3 text-sm font-bold">
+              <span>
+                <span className="block">สรุปงานประจำวัน</span>
+                <span className="text-xs font-semibold text-[var(--muted)]">แจ้งจำนวนงานวันนี้ งานเลยกำหนด และงานสำคัญ</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={userSettings.dailyDigestEnabled}
+                onChange={(event) => void handleSaveSettingsPatch({ dailyDigestEnabled: event.target.checked })}
+                className="h-5 w-5 accent-black dark:accent-white"
+              />
+            </label>
+            <label className="grid gap-1 text-sm font-bold">
+              เวลาแจ้งสรุป / เวลาเช้าวันนั้น
+              <input type="time" value={userSettings.dailyDigestTime} onChange={(event) => void handleSaveSettingsPatch({ dailyDigestTime: event.target.value || "09:00" })} className="focus-ring rounded-lg border border-[var(--border)] bg-transparent px-3 py-2" />
             </label>
             <label className="grid gap-1 text-sm font-bold">
               สำรองอัตโนมัติทุกกี่นาที

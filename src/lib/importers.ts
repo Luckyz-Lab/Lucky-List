@@ -143,6 +143,13 @@ function parsePayload(data: unknown, source: string): NormalizedImport | null {
     settings.theme = rawSettings.theme as UserSettings["theme"];
   }
   if (rawSettings.notificationsEnabled !== undefined) settings.notificationsEnabled = Boolean(rawSettings.notificationsEnabled);
+  if (typeof rawSettings.defaultReminderMode === "string" && ["none", "due-time", "30-min-before", "day-start"].includes(rawSettings.defaultReminderMode)) {
+    settings.defaultReminderMode = rawSettings.defaultReminderMode as UserSettings["defaultReminderMode"];
+  }
+  if (rawSettings.dailyDigestEnabled !== undefined) settings.dailyDigestEnabled = Boolean(rawSettings.dailyDigestEnabled);
+  if (typeof rawSettings.dailyDigestTime === "string" && /^\d{2}:\d{2}$/.test(rawSettings.dailyDigestTime)) {
+    settings.dailyDigestTime = rawSettings.dailyDigestTime;
+  }
   if (rawSettings.autoBackupMinutes !== undefined) settings.autoBackupMinutes = numberValue(rawSettings.autoBackupMinutes, 60);
 
   if (!rawTasks.length) warnings.push("ไม่พบข้อมูลงานในไฟล์นี้");

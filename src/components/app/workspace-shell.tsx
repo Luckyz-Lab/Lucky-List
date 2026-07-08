@@ -51,7 +51,9 @@ export function WorkspaceShell({
   cloudState,
   navItems,
   onCreate,
+  notificationCount,
   onOpenCommand,
+  onOpenNotifications,
   onOpenSavedView,
   onRefreshCloud,
   onSignOut,
@@ -67,7 +69,9 @@ export function WorkspaceShell({
   cloudState: CloudState;
   navItems: WorkspaceNavItem[];
   onCreate: () => void;
+  notificationCount?: number;
   onOpenCommand: () => void;
+  onOpenNotifications?: () => void;
   onOpenSavedView?: (view: WorkspaceSavedView) => void;
   onRefreshCloud: () => void;
   onSignOut: () => void;
@@ -206,6 +210,14 @@ export function WorkspaceShell({
               <Button variant="secondary" onClick={onOpenCommand} className="px-3" title="คำสั่ง">
                 <Command size={17} />
                 <span className="hidden md:inline">คำสั่ง</span>
+              </Button>
+              <Button variant="secondary" onClick={onOpenNotifications} className="relative px-3" title="ศูนย์แจ้งเตือน">
+                <Bell size={17} />
+                {Boolean(notificationCount) && (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--danger)] px-1 text-[10px] font-black text-white">
+                    {Math.min(notificationCount ?? 0, 99)}
+                  </span>
+                )}
               </Button>
               <Button variant="secondary" onClick={onToggleTheme} className="px-3">
                 {userSettings.theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
