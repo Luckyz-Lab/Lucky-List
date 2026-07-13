@@ -73,6 +73,7 @@ export type Database = {
           notes: string | null;
           category: string | null;
           priority: "Low" | "Normal" | "High" | "Urgent";
+          estimate_minutes: number;
           progress: number;
           board_state: "todo" | "wip" | "done";
           start_date: string | null;
@@ -92,6 +93,7 @@ export type Database = {
           notes?: string | null;
           category?: string | null;
           priority?: "Low" | "Normal" | "High" | "Urgent";
+          estimate_minutes?: number;
           progress?: number;
           board_state?: "todo" | "wip" | "done";
           start_date?: string | null;
@@ -118,6 +120,7 @@ export type Database = {
           default_reminder_mode: "none" | "due-time" | "30-min-before" | "day-start";
           daily_digest_enabled: boolean;
           daily_digest_time: string;
+          daily_capacity_minutes: number;
           auto_backup_minutes: number;
           last_synced_at: string | null;
           updated_at: string;
@@ -132,6 +135,7 @@ export type Database = {
           default_reminder_mode?: "none" | "due-time" | "30-min-before" | "day-start";
           daily_digest_enabled?: boolean;
           daily_digest_time?: string;
+          daily_capacity_minutes?: number;
           auto_backup_minutes?: number;
           last_synced_at?: string | null;
           updated_at?: string;

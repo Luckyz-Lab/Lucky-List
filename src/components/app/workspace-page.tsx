@@ -34,7 +34,7 @@ import {
   Upload,
   Zap,
 } from "lucide-react";
-import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentType, type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -92,6 +92,7 @@ const boardDueFilters = ["All", "Overdue", "Today", "Soon", "No date"] as const;
 type BoardDueFilter = (typeof boardDueFilters)[number];
 type BoardDensity = "compact" | "comfort";
 type ReviewStageKey = "inbox" | "overdue" | "noDate" | "someday" | "done";
+type CalendarView = "month" | "week";
 
 const boardDueFilterLabels: Record<BoardDueFilter, string> = {
   All: "ทั้งหมด",
@@ -173,6 +174,43 @@ function shiftMonth(date: Date, delta: number) {
   return new Date(date.getFullYear(), date.getMonth() + delta, 1);
 }
 
+function startOfWeek(date: Date) {
+  const weekStart = new Date(date);
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+  return weekStart;
+}
+
+function shiftWeek(date: Date, delta: number) {
+  const shifted = new Date(date);
+  shifted.setDate(shifted.getDate() + delta * 7);
+  return startOfWeek(shifted);
+}
+
+function buildWeekDays(weekStart: Date) {
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + index);
+    return { key: dateKey(date), date };
+  });
+}
+
+function weekLabel(weekStart: Date) {
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  const start = weekStart.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+  const end = weekEnd.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  return `${start} - ${end}`;
+}
+
+function formatEstimate(minutes?: number) {
+  const safeMinutes = minutes ?? 30;
+  if (safeMinutes < 60) return `${safeMinutes} นาที`;
+  const hours = Math.floor(safeMinutes / 60);
+  const remainder = safeMinutes % 60;
+  return remainder ? `${hours} ชม. ${remainder} นาที` : `${hours} ชม.`;
+}
+
 function monthLabel(date: Date) {
   return date.toLocaleDateString("th-TH", { month: "long", year: "numeric" });
 }
@@ -203,7 +241,7 @@ function buildCalendarDays(month: Date) {
 }
 
 function taskCalendarKeys(task: Task) {
-  return [task.dueAt?.slice(0, 10), task.startDate, task.reminderAt?.slice(0, 10)].filter(Boolean) as string[];
+  return Array.from(new Set([task.dueAt?.slice(0, 10), task.startDate, task.reminderAt?.slice(0, 10)].filter(Boolean))) as string[];
 }
 
 export function WorkspacePage({ initialView }: { initialView: AppView }) {
@@ -228,7 +266,13 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
   const [reviewNow] = useState(() => Date.now());
   const [reviewStage, setReviewStage] = useState<ReviewStageKey>("inbox");
   const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(new Date()));
+  const [calendarWeekStart, setCalendarWeekStart] = useState(() => startOfWeek(new Date()));
+  const [calendarView, setCalendarView] = useState<CalendarView>("month");
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => dateKey(new Date()));
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(() => new Set());
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [shutdownOpen, setShutdownOpen] = useState(false);
   const {
     tasks,
     settings: userSettings,
@@ -425,6 +469,12 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
 
   const completion = activeTasks.length ? Math.round((doneTasks.length / activeTasks.length) * 100) : 0;
   const plannedTodayTasks = useMemo(() => todayTasks.slice(0, 3), [todayTasks]);
+  const todayEstimateMinutes = useMemo(
+    () => todayTasks.reduce((total, task) => total + (task.estimateMinutes ?? 30), 0),
+    [todayTasks],
+  );
+  const dailyCapacityMinutes = userSettings.dailyCapacityMinutes ?? 360;
+  const dailyCapacityPercent = Math.min(100, Math.round((todayEstimateMinutes / dailyCapacityMinutes) * 100));
   const nextActions = useMemo(() => {
     const seen = new Set<string>();
     return [...overdueTasks, ...todayTasks, ...openTasks.filter((task) => task.priority === "Urgent" || task.priority === "High"), ...soonTasks]
@@ -600,6 +650,107 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     } catch (error) {
       setImportNotice(actionErrorMessage(error, "ย้ายงานไม่สำเร็จ"));
     }
+  }
+
+  function toggleTaskSelection(taskId: string) {
+    setSelectedTaskIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
+
+  function handleTaskDragStart(event: DragEvent<HTMLElement>, task: Task) {
+    setDraggedTaskId(task.id);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", task.id);
+  }
+
+  function handleTaskDragEnd() {
+    setDraggedTaskId(null);
+  }
+
+  async function handleBoardDrop(event: DragEvent<HTMLElement>, boardState: BoardState) {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData("text/plain") || draggedTaskId;
+    setDraggedTaskId(null);
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task || task.boardState === boardState) return;
+    await handleMoveTask(task, boardState);
+  }
+
+  async function handleScheduleTask(task: Task, date: string) {
+    try {
+      const oldStartDate = task.startDate;
+      const dueMovesWithPlan = !task.dueAt || task.dueAt.slice(0, 10) === oldStartDate;
+      await saveTask({
+        ...task,
+        startDate: date,
+        dueAt: dueMovesWithPlan ? date : task.dueAt,
+        boardState: task.boardState === "done" ? "todo" : task.boardState,
+      });
+      setSelectedCalendarDate(date);
+      setImportNotice(`วางแผนงานแล้ว: ${task.title}`);
+    } catch (error) {
+      setImportNotice(actionErrorMessage(error, "ย้ายงานในปฏิทินไม่สำเร็จ"));
+    }
+  }
+
+  async function handleCalendarDrop(event: DragEvent<HTMLElement>, date: string) {
+    event.preventDefault();
+    const taskId = event.dataTransfer.getData("text/plain") || draggedTaskId;
+    setDraggedTaskId(null);
+    const task = tasks.find((item) => item.id === taskId);
+    if (task) await handleScheduleTask(task, date);
+  }
+
+  async function handleBulkAction(action: "tomorrow" | "someday" | "done" | "todo") {
+    const selected = activeTasks.filter((task) => selectedTaskIds.has(task.id));
+    if (!selected.length) return;
+    try {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowKey = dateKey(tomorrow);
+      await Promise.all(
+        selected.map((task) => {
+          if (action === "done") return moveTask(task, "done");
+          if (action === "todo") return moveTask(task, "todo");
+          if (action === "someday") return saveTask({ ...task, category: "Someday", startDate: null, dueAt: null, reminderAt: null });
+          const dueMovesWithPlan = !task.dueAt || task.dueAt.slice(0, 10) === task.startDate;
+          return saveTask({ ...task, startDate: tomorrowKey, dueAt: dueMovesWithPlan ? tomorrowKey : task.dueAt });
+        }),
+      );
+      setImportNotice(`จัดการ ${selected.length} งานแล้ว`);
+      setSelectedTaskIds(new Set());
+      setSelectionMode(false);
+    } catch (error) {
+      setImportNotice(actionErrorMessage(error, "จัดการหลายงานไม่สำเร็จ"));
+    }
+  }
+
+  async function handleDailyShutdown(action: "tomorrow" | "someday") {
+    const unfinished = todayTasks.filter((task) => !isDoneTask(task));
+    if (!unfinished.length) {
+      setShutdownOpen(false);
+      setImportNotice("วันนี้ไม่มีงานค้างให้จัดการ");
+      return;
+    }
+    if (action === "someday") {
+      await Promise.all(unfinished.map((task) => saveTask({ ...task, category: "Someday", startDate: null, dueAt: null, reminderAt: null })));
+    } else {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowKey = dateKey(tomorrow);
+      await Promise.all(
+        unfinished.map((task) => {
+          const dueMovesWithPlan = !task.dueAt || task.dueAt.slice(0, 10) === task.startDate;
+          return saveTask({ ...task, startDate: tomorrowKey, dueAt: dueMovesWithPlan ? tomorrowKey : task.dueAt });
+        }),
+      );
+    }
+    setShutdownOpen(false);
+    setImportNotice(action === "tomorrow" ? `ย้ายงานค้าง ${unfinished.length} งานไปพรุ่งนี้แล้ว` : `พักงานค้าง ${unfinished.length} งานแล้ว`);
   }
 
   async function handleCloneTask(task: Task) {
@@ -1010,7 +1161,19 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                   <Clock size={19} className="text-[var(--warning)]" />
                   วันนี้
                 </h2>
-                <span className="text-sm font-black text-[var(--muted)]">{todayTasks.length}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black text-[var(--muted)]">{todayTasks.length}</span>
+                  <Button variant="ghost" className="min-h-8 px-2 text-xs" onClick={() => setShutdownOpen((value) => !value)}>ปิดวัน</Button>
+                </div>
+              </div>
+              <div className="mb-3 rounded-lg bg-[var(--surface-strong)] p-2.5">
+                <div className="flex items-center justify-between gap-2 text-xs font-bold">
+                  <span>กำลังงานวันนี้</span>
+                  <span className={todayEstimateMinutes > dailyCapacityMinutes ? "text-[var(--danger)]" : "text-[var(--muted)]"}>{formatEstimate(todayEstimateMinutes)} / {formatEstimate(dailyCapacityMinutes)}</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--surface)]">
+                  <div className={cn("h-full rounded-full transition-[width] duration-200", todayEstimateMinutes > dailyCapacityMinutes ? "bg-[var(--danger)]" : "bg-[var(--foreground)]")} style={{ width: `${dailyCapacityPercent}%` }} />
+                </div>
               </div>
               <div className="grid gap-2">
                 {todayTasks.slice(0, 5).map((task) => (
@@ -1018,6 +1181,16 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                 ))}
                 {!todayTasks.length && <EmptyState title="วันนี้ยังไม่มีงาน" detail="ถ้ามีงานสำคัญ ให้เพิ่มเข้าแผนวันนี้" />}
               </div>
+              {shutdownOpen && (
+                <div className="mt-3 border-t border-[var(--border)] pt-3">
+                  <p className="text-sm font-bold">เคลียร์งานค้างก่อนจบวัน</p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">งานที่ยังไม่เสร็จ {todayTasks.length} งาน จะถูกย้ายโดยไม่กระทบงานที่ทำเสร็จแล้ว</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Button variant="secondary" className="min-h-9 px-2 text-xs" onClick={() => void handleDailyShutdown("tomorrow")}>ย้ายไปพรุ่งนี้</Button>
+                    <Button variant="secondary" className="min-h-9 px-2 text-xs" onClick={() => void handleDailyShutdown("someday")}>พักไว้ก่อน</Button>
+                  </div>
+                </div>
+              )}
             </Panel>
 
             <Panel className="p-4">
@@ -1260,22 +1433,18 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
     };
     return (
       <>
-        <Panel className="grid grid-cols-2 gap-2 p-3 md:grid-cols-3 lg:grid-cols-6">
-          <BoardMetric label="งานทั้งหมด" value={activeTasks.length} detail={`แสดง ${filteredBoardTasks.length}`} />
-          <BoardMetric label="รอทำ" value={boardStats.todo} detail="รอคิว" />
-          <BoardMetric label="กำลังทำ" value={boardStats.wip} detail="อยู่ระหว่างทำ" tone="strong" />
-          <BoardMetric label="เสร็จแล้ว" value={boardStats.done} detail={`${completion}% สำเร็จ`} tone="success" />
-          <BoardMetric label="เลยกำหนด" value={overdueTasks.length} detail="ควรรีวิว" tone="danger" />
-          <BoardMetric label="วันนี้" value={todayTasks.length} detail="ส่ง / เริ่ม / เตือน" tone="warning" />
+        <Panel className="overflow-x-auto p-2">
+          <div className="grid min-w-[640px] grid-cols-6 gap-1.5">
+            <BoardMetric label="ทั้งหมด" value={activeTasks.length} detail={`แสดง ${filteredBoardTasks.length}`} />
+            <BoardMetric label="รอทำ" value={boardStats.todo} detail="รอคิว" />
+            <BoardMetric label="กำลังทำ" value={boardStats.wip} detail="ระหว่างทำ" tone="strong" />
+            <BoardMetric label="เสร็จแล้ว" value={boardStats.done} detail={`${completion}%`} tone="success" />
+            <BoardMetric label="เลยกำหนด" value={overdueTasks.length} detail="ต้องรีวิว" tone="danger" />
+            <BoardMetric label="วันนี้" value={todayTasks.length} detail={formatEstimate(todayEstimateMinutes)} tone="warning" />
+          </div>
         </Panel>
 
-        <Panel className="grid gap-2 p-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-          {savedViews.map((view) => (
-            <SmartViewButton key={view.label} view={view} active={savedViewActive(view)} compact onClick={() => openSavedView(view)} />
-          ))}
-        </Panel>
-
-        <Panel className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[minmax(220px,1fr)_150px_160px_140px_auto_auto]">
+        <Panel className="grid gap-2 p-2 md:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_145px_155px_130px_auto_auto_auto]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={16} />
             <input
@@ -1325,6 +1494,18 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
               <SlidersHorizontal size={15} />
               ภาพรวม
             </Button>
+            <Button
+              variant={selectionMode ? "primary" : "secondary"}
+              className="px-3"
+              onClick={() => {
+                setSelectionMode((value) => !value);
+                setSelectedTaskIds(new Set());
+              }}
+              title="เลือกหลายงาน"
+            >
+              <CheckCircle2 size={15} />
+              <span className="hidden 2xl:inline">เลือก</span>
+            </Button>
             <Button variant="secondary" className="px-3" onClick={handleAddDemoTasks} title="เพิ่มงานตัวอย่าง 50 งาน">
               <Zap size={15} />
               ตัวอย่าง 50
@@ -1332,8 +1513,26 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
           </div>
         </Panel>
 
+        {selectionMode && (
+          <Panel className="flex flex-wrap items-center justify-between gap-2 p-2.5">
+            <p className="text-sm font-bold">เลือกแล้ว {selectedTaskIds.size} งาน</p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" className="min-h-9 px-3 text-xs" disabled={!selectedTaskIds.size} onClick={() => void handleBulkAction("tomorrow")}>
+                <CalendarPlus size={14} /> พรุ่งนี้
+              </Button>
+              <Button variant="secondary" className="min-h-9 px-3 text-xs" disabled={!selectedTaskIds.size} onClick={() => void handleBulkAction("someday")}>
+                <Bookmark size={14} /> พักไว้
+              </Button>
+              <Button variant="success" className="min-h-9 px-3 text-xs" disabled={!selectedTaskIds.size} onClick={() => void handleBulkAction("done")}>
+                <Check size={14} /> เสร็จแล้ว
+              </Button>
+              <Button variant="ghost" className="min-h-9 px-3 text-xs" onClick={() => setSelectedTaskIds(new Set())}>ล้าง</Button>
+            </div>
+          </Panel>
+        )}
+
         <section className={cn("grid gap-3", inspectorOpen ? "xl:grid-cols-[minmax(0,1fr)_320px]" : "xl:grid-cols-1")}>
-          <div className="grid gap-3 xl:h-[calc(100vh-300px)] xl:min-h-[460px] xl:grid-cols-3">
+          <div className="grid gap-3 xl:h-[calc(100dvh-220px)] xl:min-h-[480px] xl:grid-cols-3">
         {boardStates.map((state) => {
           const items = filteredBoardTasks.filter((task) => task.boardState === state);
           return (
@@ -1345,9 +1544,13 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                 </div>
                 <MoreHorizontal size={17} className="text-[var(--muted)]" />
               </div>
-              <div className="grid grid-cols-1 gap-2 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-1">
+              <div
+                className="grid grid-cols-1 gap-2 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-1"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => void handleBoardDrop(event, state)}
+              >
                 {items.map((task) => (
-                  <TaskCard key={task.id} task={task} density={boardDensity} onEdit={openEdit} onMove={handleMoveTask} onToggleDone={handleToggleDone} onPlanToday={handlePlanToday} onInbox={handleSendToInbox} onSomeday={handleSendSomeday} onDelete={handleDeleteTask} onClone={handleCloneTask} onArchive={handleArchiveTask} onSubtask={handleUpdateSubtask} />
+                  <TaskCard key={task.id} task={task} density={boardDensity} selectionMode={selectionMode} selected={selectedTaskIds.has(task.id)} onSelect={toggleTaskSelection} onDragStart={handleTaskDragStart} onDragEnd={handleTaskDragEnd} onEdit={openEdit} onMove={handleMoveTask} onToggleDone={handleToggleDone} onPlanToday={handlePlanToday} onInbox={handleSendToInbox} onSomeday={handleSendSomeday} onDelete={handleDeleteTask} onClone={handleCloneTask} onArchive={handleArchiveTask} onSubtask={handleUpdateSubtask} />
                 ))}
                 {!items.length && <BoardEmptyState state={state} filtered={hasBoardFilters} onCreate={openCreate} />}
               </div>
@@ -1356,7 +1559,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
             })}
           </div>
 
-          <aside className={cn("hidden content-start gap-3 xl:max-h-[calc(100vh-300px)] xl:overflow-y-auto xl:pr-1", inspectorOpen && "xl:grid")}>
+          <aside className={cn("hidden content-start gap-3 xl:max-h-[calc(100dvh-220px)] xl:overflow-y-auto xl:pr-1", inspectorOpen && "xl:grid")}>
             <Panel className="p-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-black text-[var(--muted)]">ภาพรวม</h2>
@@ -1458,6 +1661,7 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
 
   function renderCalendar() {
     const calendarDays = buildCalendarDays(calendarMonth);
+    const weekCalendarDays = buildWeekDays(calendarWeekStart);
     const today = dateKey(new Date());
     const tasksByDate = new Map<string, Task[]>();
 
@@ -1487,11 +1691,18 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
           <div className="flex flex-col gap-3 border-b border-[var(--border)] p-3 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-black text-[var(--muted)]">ปฏิทินงาน</p>
-              <h2 className="text-2xl font-black">{monthLabel(calendarMonth)}</h2>
-              <p className="mt-1 text-sm text-[var(--muted)]">ดูงานตามวัน กดวันที่เพื่อดูรายละเอียด หรือเพิ่มงานลงวันนั้นได้ทันที</p>
+              <h2 className="text-2xl font-black">{calendarView === "month" ? monthLabel(calendarMonth) : weekLabel(calendarWeekStart)}</h2>
+              <p className="mt-1 text-sm text-[var(--muted)]">ลากงานเพื่อเลื่อนวันได้ และกด + เพื่อเพิ่มงานในวันที่เลือก</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" className="px-3" onClick={() => setCalendarMonth((month) => shiftMonth(month, -1))}>
+              <div className="flex min-h-10 rounded-lg border border-[var(--border)] bg-[var(--surface-strong)] p-1">
+                {(["month", "week"] as const).map((view) => (
+                  <button key={view} type="button" onClick={() => setCalendarView(view)} className={cn("focus-ring rounded-md px-2.5 text-xs font-black transition", calendarView === view ? "bg-[var(--foreground)] text-[var(--background)]" : "text-[var(--muted)] hover:text-[var(--foreground)]")}>
+                    {view === "month" ? "เดือน" : "สัปดาห์"}
+                  </button>
+                ))}
+              </div>
+              <Button variant="secondary" className="px-3" onClick={() => calendarView === "month" ? setCalendarMonth((month) => shiftMonth(month, -1)) : setCalendarWeekStart((week) => shiftWeek(week, -1))}>
                 <ChevronRight size={16} className="rotate-180" />
               </Button>
               <Button
@@ -1500,12 +1711,13 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                 onClick={() => {
                   const now = new Date();
                   setCalendarMonth(startOfMonth(now));
+                  setCalendarWeekStart(startOfWeek(now));
                   setSelectedCalendarDate(dateKey(now));
                 }}
               >
                 วันนี้
               </Button>
-              <Button variant="secondary" className="px-3" onClick={() => setCalendarMonth((month) => shiftMonth(month, 1))}>
+              <Button variant="secondary" className="px-3" onClick={() => calendarView === "month" ? setCalendarMonth((month) => shiftMonth(month, 1)) : setCalendarWeekStart((week) => shiftWeek(week, 1))}>
                 <ChevronRight size={16} />
               </Button>
               <Button onClick={() => openCreateForDate(selectedCalendarDate)}>
@@ -1515,6 +1727,8 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
             </div>
           </div>
 
+          {calendarView === "month" ? (
+            <>
           <div className="grid grid-cols-7 border-b border-[var(--border)] bg-[var(--surface-strong)] text-center text-[11px] font-black text-[var(--muted)]">
             {weekDays.map((day) => (
               <div key={day} className="border-r border-[var(--border)] py-2 last:border-r-0">
@@ -1533,11 +1747,13 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                 <div
                   key={day.key}
                   className={cn(
-                    "min-h-[132px] border-r border-b border-[var(--border)] p-1.5 md:min-h-[150px]",
+                    "min-h-[96px] border-r border-b border-[var(--border)] p-1.5 md:min-h-[104px]",
                     index % 7 === 6 && "border-r-0",
                     !day.inMonth && "bg-[var(--surface-strong)]/45 text-[var(--muted)]",
                     selected && "bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--foreground)]",
                   )}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => void handleCalendarDrop(event, day.key)}
                 >
                   <div className="flex items-center justify-between gap-1">
                     <button
@@ -1571,6 +1787,9 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
                       <button
                         key={task.id}
                         type="button"
+                        draggable
+                        onDragStart={(event) => handleTaskDragStart(event, task)}
+                        onDragEnd={handleTaskDragEnd}
                         onClick={() => openEdit(task)}
                         className={cn("focus-ring truncate rounded-md border px-1.5 py-1 text-left text-[10px] font-black transition hover:bg-[var(--surface)]", priorityClass(task.priority))}
                         title={task.title}
@@ -1588,6 +1807,53 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
               );
             })}
           </div>
+            </>
+          ) : (
+            <div className="overflow-x-auto">
+              <div className="grid min-w-[840px] grid-cols-7">
+                {weekCalendarDays.map((day) => {
+                  const dayTasks = tasksByDate.get(day.key) ?? [];
+                  const selected = selectedCalendarDate === day.key;
+                  const isToday = today === day.key;
+                  return (
+                    <div
+                      key={day.key}
+                      className={cn("min-h-[520px] border-r border-b border-[var(--border)] p-2 last:border-r-0", selected && "bg-[color-mix(in_oklab,var(--foreground)_4%,transparent)]")}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => void handleCalendarDrop(event, day.key)}
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <button type="button" onClick={() => setSelectedCalendarDate(day.key)} className={cn("focus-ring rounded-md px-2 py-1 text-left text-xs font-black", isToday ? "bg-[var(--foreground)] text-[var(--background)]" : "hover:bg-[var(--surface-strong)]")}>
+                          {day.date.toLocaleDateString("th-TH", { weekday: "short", day: "numeric" })}
+                        </button>
+                        <button type="button" onClick={() => openCreateForDate(day.key)} className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-strong)] hover:text-[var(--foreground)]" aria-label={`เพิ่มงานวันที่ ${day.key}`}>
+                          <CirclePlus size={14} />
+                        </button>
+                      </div>
+                      <div className="grid gap-1.5">
+                        {dayTasks.map((task) => (
+                          <button
+                            key={task.id}
+                            type="button"
+                            draggable
+                            onDragStart={(event) => handleTaskDragStart(event, task)}
+                            onDragEnd={handleTaskDragEnd}
+                            onClick={() => openEdit(task)}
+                            className={cn("focus-ring rounded-md border px-2 py-1.5 text-left text-[11px] font-bold transition hover:bg-[var(--surface)]", priorityClass(task.priority))}
+                            title={`${task.title} · ${formatEstimate(task.estimateMinutes)}`}
+                          >
+                            <span className="block truncate">{task.title}</span>
+                            <span className="mt-0.5 block text-[10px] opacity-75">{formatEstimate(task.estimateMinutes)}</span>
+                          </button>
+                        ))}
+                        {!dayTasks.length && <p className="px-1 py-3 text-center text-[11px] font-semibold text-[var(--muted)]">ว่าง</p>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </Panel>
 
         <div className="grid gap-4">
@@ -1795,6 +2061,11 @@ export function WorkspacePage({ initialView }: { initialView: AppView }) {
               แจ้งเตือนงานใกล้กำหนดภายในกี่วัน
               <input type="number" min={1} max={31} value={userSettings.deadlineThresholdDays} onChange={(event) => void handleSaveSettingsPatch({ deadlineThresholdDays: Number(event.target.value) || 3 })} className="focus-ring rounded-lg border border-[var(--border)] bg-transparent px-3 py-2" />
             </label>
+            <label className="grid gap-1 text-sm font-bold">
+              เวลาที่พร้อมทำงานต่อวัน (นาที)
+              <input type="number" min={60} max={960} step={30} value={userSettings.dailyCapacityMinutes ?? 360} onChange={(event) => void handleSaveSettingsPatch({ dailyCapacityMinutes: Number(event.target.value) || 360 })} className="focus-ring rounded-lg border border-[var(--border)] bg-transparent px-3 py-2" />
+              <span className="text-xs font-semibold text-[var(--muted)]">ใช้เตือนเมื่อวางแผนงานวันนี้มากเกินกำลังที่ตั้งไว้</span>
+            </label>
             <label className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] p-3 text-sm font-bold">
               <span>
                 <span className="block">แจ้งเตือนงาน</span>
@@ -1910,7 +2181,7 @@ function BoardMetric({ label, value, detail, tone = "neutral" }: { label: string
         <span className="text-[11px] font-black text-[var(--muted)]">{label}</span>
         <span className={cn("max-w-[92px] truncate rounded-md border px-1.5 py-0.5 text-[10px] font-black", tones[tone])}>{detail}</span>
       </div>
-      <p className="mt-2 text-2xl font-black leading-none">{value}</p>
+      <p className="mt-1.5 text-xl font-black leading-none">{value}</p>
     </div>
   );
 }
@@ -2049,6 +2320,11 @@ function TaskCheckButton({ checked, onClick }: { checked: boolean; onClick: () =
 function TaskCard({
   task,
   density = "compact",
+  selectionMode = false,
+  selected = false,
+  onSelect,
+  onDragStart,
+  onDragEnd,
   onEdit,
   onMove,
   onToggleDone,
@@ -2062,6 +2338,11 @@ function TaskCard({
 }: {
   task: Task;
   density?: BoardDensity;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onSelect?: (taskId: string) => void;
+  onDragStart?: (event: DragEvent<HTMLDivElement>, task: Task) => void;
+  onDragEnd?: () => void;
   onEdit: (task: Task) => void;
   onMove: (task: Task, state: BoardState) => void;
   onToggleDone: (task: Task) => void;
@@ -2082,7 +2363,18 @@ function TaskCard({
   const subtaskSummary = task.subtasks.length ? `งานย่อย ${completedSubtasks}/${task.subtasks.length}` : "ไม่มีงานย่อย";
   const done = isDoneTask(task);
   return (
-    <div className={cn("scan-card group relative rounded-lg border border-[var(--border)] bg-[var(--surface)] transition hover:border-[var(--foreground)] hover:bg-[var(--surface-strong)]", done && "opacity-70", compact ? "p-2.5" : "p-3")}>
+    <div
+      draggable={!selectionMode}
+      onDragStart={(event) => onDragStart?.(event, task)}
+      onDragEnd={onDragEnd}
+      className={cn(
+        "scan-card group relative rounded-lg border border-[var(--border)] bg-[var(--surface)] transition hover:border-[var(--foreground)] hover:bg-[var(--surface-strong)]",
+        done && "opacity-70",
+        selected && "border-[var(--foreground)] ring-1 ring-[var(--foreground)]",
+        !selectionMode && "cursor-grab active:cursor-grabbing",
+        compact ? "min-h-[116px] p-2.5" : "p-3",
+      )}
+    >
       <div className="absolute left-2.5 top-2.5">
         <TaskCheckButton checked={done} onClick={() => onToggleDone(task)} />
       </div>
@@ -2092,12 +2384,26 @@ function TaskCard({
             <h3 className={cn("truncate font-black leading-tight", done && "line-through decoration-2", compact ? "text-sm" : "text-[15px]")}>{task.title}</h3>
             <p className={cn("mt-0.5 text-[11px] text-[var(--muted)]", compact ? "line-clamp-1" : "line-clamp-2")}>{task.notes || "ไม่มีรายละเอียด"}</p>
           </div>
-          <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-black", priorityClass(task.priority))}>{priorityLabel(task.priority)}</span>
+          {selectionMode ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelect?.(task.id);
+              }}
+              className={cn("focus-ring flex h-6 w-6 shrink-0 items-center justify-center rounded-md border", selected ? "border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]" : "border-[var(--border)] text-transparent hover:text-[var(--foreground)]")}
+              aria-label={selected ? "ยกเลิกเลือกงาน" : "เลือกงาน"}
+            >
+              <Check size={14} strokeWidth={3} />
+            </button>
+          ) : (
+            <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-black", priorityClass(task.priority))}>{priorityLabel(task.priority)}</span>
+          )}
         </div>
       </button>
       <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-bold text-[var(--muted)]">
         <span className={cn("shrink-0", dueDays !== null && dueDays < 0 ? "text-[var(--danger)]" : dueDays === 0 ? "text-[var(--warning)]" : "")}>{dueLabel}</span>
-        <span className="truncate">{subtaskSummary}</span>
+        <span className="truncate">{formatEstimate(task.estimateMinutes)} · {subtaskSummary}</span>
       </div>
       <div className="mt-2">
         <div className="mb-1 flex justify-between text-[11px] font-bold text-[var(--muted)]">
@@ -2132,7 +2438,7 @@ function TaskCard({
           <MoreHorizontal size={14} />
         </button>
       </div>
-      <div className={cn("scan-card-actions mt-2 flex-wrap items-center gap-1 border-t border-[var(--border)] pt-2", actionsOpen ? "flex" : "hidden md:group-hover:flex md:group-focus-within:flex")}>
+      <div className={cn("scan-card-actions mt-2 flex-wrap items-center gap-1 border-t border-[var(--border)] pt-2", actionsOpen ? "flex" : "hidden")}>
         {boardStates
           .filter((state) => state !== task.boardState)
           .map((state) => (

@@ -14,6 +14,7 @@ function normalizeSettings(settings?: UserSettings | null): UserSettings {
     defaultReminderMode: settings?.defaultReminderMode ?? defaultSettings.defaultReminderMode,
     dailyDigestEnabled: settings?.dailyDigestEnabled ?? defaultSettings.dailyDigestEnabled,
     dailyDigestTime: settings?.dailyDigestTime ?? defaultSettings.dailyDigestTime,
+    dailyCapacityMinutes: settings?.dailyCapacityMinutes ?? defaultSettings.dailyCapacityMinutes,
     notificationsEnabled: settings?.notificationsEnabled ?? defaultSettings.notificationsEnabled,
     autoBackupMinutes: settings?.autoBackupMinutes ?? defaultSettings.autoBackupMinutes,
   };

@@ -55,6 +55,7 @@ function TaskModalForm({
   const [notes, setNotes] = useState(task?.notes ?? "");
   const [category, setCategory] = useState(task?.category ?? (modalCategories.includes("Inbox") ? "Inbox" : modalCategories[0]) ?? "Inbox");
   const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? "Normal");
+  const [estimateMinutes, setEstimateMinutes] = useState(task?.estimateMinutes ?? 30);
   const [boardState, setBoardState] = useState<BoardState>(task?.boardState ?? "todo");
   const [progress, setProgress] = useState(task?.progress ?? 0);
   const [dueAt, setDueAt] = useState(task?.dueAt?.slice(0, 10) ?? initialDate ?? "");
@@ -96,6 +97,7 @@ function TaskModalForm({
         notes,
         category,
         priority,
+        estimateMinutes,
         boardState,
         progress: finalProgress,
         completedAt: finalProgress >= 100 ? task?.completedAt ?? nowIso() : null,
@@ -119,7 +121,7 @@ function TaskModalForm({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/55 p-0 backdrop-blur-sm">
       <button type="button" className="hidden flex-1 lg:block" onClick={onClose} aria-label="ปิดหน้าต่างแก้งาน" />
-      <div className="app-surface flex h-dvh w-full max-w-2xl flex-col overflow-hidden rounded-none border-l border-[var(--border)] bg-[var(--surface)] shadow-2xl transition-transform duration-200 lg:max-w-[720px]">
+      <div className="app-surface flex h-dvh w-full max-w-2xl flex-col overflow-hidden rounded-none border-l border-[var(--border)] bg-[var(--surface)] shadow-2xl transition-transform duration-200 lg:max-w-[560px]">
         <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
           <div>
             <h2 className="text-lg font-black">{task ? "แก้ไขงาน" : "งานใหม่"}</h2>
@@ -143,7 +145,7 @@ function TaskModalForm({
             <textarea className="focus-ring min-h-20 rounded-lg border border-[var(--border)] bg-transparent px-3 py-2" value={notes} onChange={(event) => setNotes(event.target.value)} />
           </label>
 
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <label className="grid gap-1 text-sm font-semibold">
               หมวดหมู่
               <select className="focus-ring rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2" value={category} onChange={(event) => setCategory(event.target.value)}>
@@ -159,6 +161,14 @@ function TaskModalForm({
               <select className="focus-ring rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2" value={priority} onChange={(event) => setPriority(event.target.value as TaskPriority)}>
                 {priorities.map((item) => (
                   <option key={item} value={item}>{priorityLabel(item)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-semibold">
+              เวลาโดยประมาณ
+              <select className="focus-ring rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2" value={estimateMinutes} onChange={(event) => setEstimateMinutes(Number(event.target.value))}>
+                {[15, 30, 45, 60, 90, 120, 180].map((minutes) => (
+                  <option key={minutes} value={minutes}>{minutes < 60 ? `${minutes} นาที` : `${minutes / 60} ชม.`}</option>
                 ))}
               </select>
             </label>

@@ -146,6 +146,7 @@ export function taskToCsvRow(task: Task) {
     task.title,
     task.category ?? "",
     task.priority,
+    task.estimateMinutes ?? 30,
     `${task.progress}%`,
     boardLabel(task.boardState),
     task.startDate ?? "",

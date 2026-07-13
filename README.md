@@ -26,7 +26,7 @@ Without Supabase env values, the production auth flow cannot save online. Add th
 ## Supabase Setup
 
 1. Create a Supabase project.
-2. Run the SQL files in `supabase/migrations/` in order, including the notification preference migration.
+2. Run the SQL files in `supabase/migrations/` in order, including `20260713113000_planning_capacity.sql` for task estimates and daily capacity.
 3. Confirm RLS is enabled for `profiles`, `tasks`, `subtasks`, `categories`, and `user_settings`.
 4. In Authentication > Providers, keep Email enabled.
 5. Decide whether email confirmation should be required for sign-up.
@@ -51,6 +51,8 @@ Without Supabase env values, the production auth flow cannot save online. Add th
 - PIN unlock requires an existing Supabase email/password session
 - Create, edit, move, archive, delete, undo, and restore tasks
 - Notification center, browser reminders, snooze, default reminders, and daily digest
+- Board drag-and-drop, multi-select actions, and compact/comfortable density
+- Calendar month/week views, drag-to-reschedule, task estimates, daily capacity, and daily shutdown
 - Search syntax: `#category`, `priority:urgent`, `status:wip`, `due:today`, `due:soon`, `reminder:today`, `repeat:weekly`
 - Cloud update after create/edit/move/archive/delete when Supabase is connected
 - JSON/HTML import, JSON backup, CSV export

@@ -255,6 +255,7 @@ export function useLuckyList() {
         notes: input.notes ?? existing?.notes ?? "",
         category: input.category ?? existing?.category ?? "",
         priority: input.priority ?? existing?.priority ?? "Normal",
+        estimateMinutes: input.estimateMinutes ?? existing?.estimateMinutes ?? 30,
         progress: input.progress ?? existing?.progress ?? 0,
         boardState: input.boardState ?? existing?.boardState ?? "todo",
         startDate: input.startDate ?? existing?.startDate ?? new Date().toISOString().slice(0, 10),
@@ -460,7 +461,7 @@ export function useLuckyList() {
   }, [createBackupPayload]);
 
   const exportCsv = useCallback(() => {
-    const headers = ["ID", "ชื่องาน", "หมวดหมู่", "ความสำคัญ", "ความคืบหน้า", "สถานะ", "เริ่ม", "กำหนดส่ง", "เตือน", "ทำซ้ำ", "เสร็จเมื่อ", "รายละเอียด"];
+    const headers = ["ID", "ชื่องาน", "หมวดหมู่", "ความสำคัญ", "เวลาโดยประมาณ (นาที)", "ความคืบหน้า", "สถานะ", "เริ่ม", "กำหนดส่ง", "เตือน", "ทำซ้ำ", "เสร็จเมื่อ", "รายละเอียด"];
     downloadText(
       `Lucky_List_Report_${new Date().toISOString().slice(0, 10)}.csv`,
       `\uFEFF${[headers.join(","), ...tasks.map(taskToCsvRow)].join("\n")}`,
@@ -493,6 +494,7 @@ export function useLuckyList() {
           defaultReminderMode: normalized.settings.defaultReminderMode ?? settings.defaultReminderMode,
           dailyDigestEnabled: normalized.settings.dailyDigestEnabled ?? settings.dailyDigestEnabled,
           dailyDigestTime: normalized.settings.dailyDigestTime ?? settings.dailyDigestTime,
+          dailyCapacityMinutes: normalized.settings.dailyCapacityMinutes ?? settings.dailyCapacityMinutes,
           autoBackupMinutes: normalized.settings.autoBackupMinutes ?? settings.autoBackupMinutes,
         });
       }

@@ -6,6 +6,7 @@ type QuickAddMeta = {
   dateToken?: string;
   timeToken?: string;
   priorityToken?: string;
+  durationToken?: string;
   repeatToken?: string;
   boardToken?: string;
 };
@@ -131,6 +132,16 @@ function cleanHashCategory(category: string) {
   return category.replace(/^#/, "").replace(/_/g, " ").trim();
 }
 
+function estimateMinutesFromToken(token: string) {
+  const match = token.toLowerCase().match(/^(\d+)(m|min|mins|minute|minutes|นาที|h|hr|hrs|hour|hours|ชม\.?|ชั่วโมง)$/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const unit = match[2];
+  const minutes = /^(h|hr|hrs|hour|hours|ชม\.?|ชั่วโมง)$/.test(unit) ? amount * 60 : amount;
+  return Math.min(480, Math.max(5, minutes));
+}
+
 export function parseQuickAdd(input: string): QuickAddResult | null {
   const original = input.trim();
   if (!original) return null;
@@ -144,6 +155,7 @@ export function parseQuickAdd(input: string): QuickAddResult | null {
   let repeat: RepeatFrequency = "none";
   let dueDate: Date | null = null;
   let timeToken = "";
+  let estimateMinutes = 30;
 
   tokens.forEach((token, index) => {
     const normalized = token.toLowerCase();
@@ -154,6 +166,26 @@ export function parseQuickAdd(input: string): QuickAddResult | null {
       meta.category = category;
       removals.add(index);
       return;
+    }
+
+    const duration = estimateMinutesFromToken(token);
+    if (duration) {
+      estimateMinutes = duration;
+      meta.durationToken = token;
+      removals.add(index);
+      return;
+    }
+
+    const nextToken = tokens[index + 1]?.toLowerCase();
+    if (/^\d+$/.test(token) && nextToken && /^(นาที|ชม\.?|ชั่วโมง)$/.test(nextToken)) {
+      const durationFromPair = estimateMinutesFromToken(`${token}${nextToken}`);
+      if (durationFromPair) {
+        estimateMinutes = durationFromPair;
+        meta.durationToken = `${token} ${tokens[index + 1]}`;
+        removals.add(index);
+        removals.add(index + 1);
+        return;
+      }
     }
 
     if (bangPriority) {
@@ -208,6 +240,7 @@ export function parseQuickAdd(input: string): QuickAddResult | null {
       title,
       category,
       priority,
+      estimateMinutes,
       boardState,
       dueAt: dueDate ? format(dueDate, "yyyy-MM-dd") : null,
       reminderAt,

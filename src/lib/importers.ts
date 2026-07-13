@@ -100,6 +100,7 @@ export function normalizeImportedTask(raw: unknown, index = 0) {
     notes: stringValue(item.notes),
     category: stringValue(item.category),
     priority: normalizePriority(item.priority),
+    estimateMinutes: Math.min(480, Math.max(5, numberValue(item.estimateMinutes ?? item.estimate_minutes ?? item.durationMinutes, 30))),
     progress,
     boardState,
     startDate: dateString(item.startDate ?? item.start_date ?? item.addDate),
@@ -149,6 +150,9 @@ function parsePayload(data: unknown, source: string): NormalizedImport | null {
   if (rawSettings.dailyDigestEnabled !== undefined) settings.dailyDigestEnabled = Boolean(rawSettings.dailyDigestEnabled);
   if (typeof rawSettings.dailyDigestTime === "string" && /^\d{2}:\d{2}$/.test(rawSettings.dailyDigestTime)) {
     settings.dailyDigestTime = rawSettings.dailyDigestTime;
+  }
+  if (rawSettings.dailyCapacityMinutes !== undefined) {
+    settings.dailyCapacityMinutes = Math.min(960, Math.max(60, numberValue(rawSettings.dailyCapacityMinutes, 360)));
   }
   if (rawSettings.autoBackupMinutes !== undefined) settings.autoBackupMinutes = numberValue(rawSettings.autoBackupMinutes, 60);
 

@@ -10,7 +10,7 @@ export function QuickAddBar({ onQuickAdd, className = "" }: { onQuickAdd: (text:
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
   const preview = useMemo(() => parseQuickAdd(value), [value]);
-  const examples = ["ส่งรายงาน tomorrow 10:00 high #งาน", "ทบทวนงาน friday #รีวิว", "ร่างข้อเสนอ !! #งาน wip"];
+  const examples = ["ส่งรายงาน พรุ่งนี้ 10:00 สูง #งาน 45นาที", "ทบทวนงาน friday #รีวิว 1ชม.", "ร่างข้อเสนอ !! #งาน wip 30m"];
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,7 +46,7 @@ export function QuickAddBar({ onQuickAdd, className = "" }: { onQuickAdd: (text:
       </form>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-[var(--muted)]">
         <Keyboard size={14} />
-        <span>ใช้ #หมวดหมู่, high/urgent/!!, today/tomorrow/+3d, เวลา 10:00, daily/weekly/monthly ได้ คีย์ลัด: N งานใหม่, B บอร์ด, F โฟกัส, R รีวิว</span>
+        <span>ใช้ #หมวดหมู่, สูง/ด่วน/!!, วันนี้/พรุ่งนี้/+3วัน, เวลา 10:00, 30นาที/1ชม., ทุกวัน ได้</span>
       </div>
       {preview?.task.title && (
         <div className="mt-3 flex flex-wrap gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-strong)] p-2 text-xs font-bold">
@@ -55,6 +55,7 @@ export function QuickAddBar({ onQuickAdd, className = "" }: { onQuickAdd: (text:
           {preview.task.category && <span className="rounded-md border border-[var(--border)] px-1.5">#{preview.task.category}</span>}
           {preview.task.dueAt && <span className="rounded-md border border-[var(--border)] px-1.5">due {preview.task.dueAt}</span>}
           {preview.task.priority && <span className="rounded-md border border-[var(--border)] px-1.5">{preview.task.priority}</span>}
+          {preview.task.estimateMinutes && <span className="rounded-md border border-[var(--border)] px-1.5">{preview.task.estimateMinutes} นาที</span>}
           {preview.task.boardState && preview.task.boardState !== "todo" && <span className="rounded-md border border-[var(--border)] px-1.5">{preview.task.boardState.toUpperCase()}</span>}
         </div>
       )}

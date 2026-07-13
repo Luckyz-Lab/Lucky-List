@@ -15,6 +15,7 @@ const baseTask: Task = {
   notes: "Check the board before standup",
   category: "Project",
   priority: "High",
+  estimateMinutes: 45,
   progress: 50,
   boardState: "wip",
   startDate: "2026-07-07",
@@ -92,6 +93,7 @@ describe("task mapping and validation", () => {
 
     expect(mapped.title).toBe(baseTask.title);
     expect(mapped.boardState).toBe("wip");
+    expect(mapped.estimateMinutes).toBe(45);
     expect(mapped.repeatRule.frequency).toBe("weekly");
     expect(mapped.subtasks).toHaveLength(1);
   });
@@ -108,6 +110,14 @@ describe("task utilities", () => {
     expect(parsed?.task.category).toBe("Finance");
     expect(parsed?.task.priority).toBe("High");
     expect(parsed?.task.reminderAt).toContain("T02:30:00.000Z");
+  });
+
+  it("parses Thai planning and duration tokens", () => {
+    const parsed = parseQuickAdd("เตรียมสรุป พรุ่งนี้ 1 ชม. ด่วน #งาน");
+    expect(parsed?.task.title).toBe("เตรียมสรุป");
+    expect(parsed?.task.estimateMinutes).toBe(60);
+    expect(parsed?.task.priority).toBe("Urgent");
+    expect(parsed?.task.category).toBe("งาน");
   });
 
   it("normalizes JSON imports", () => {

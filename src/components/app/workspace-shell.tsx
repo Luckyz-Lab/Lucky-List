@@ -82,10 +82,10 @@ export function WorkspaceShell({
   userSettings: UserSettings;
 }) {
   return (
-    <div className={cn("grid min-h-screen transition-[grid-template-columns] duration-200", sidebarCollapsed ? "lg:grid-cols-[76px_1fr]" : "lg:grid-cols-[260px_1fr]")}>
+    <div className={cn("grid min-h-screen transition-[grid-template-columns] duration-200", sidebarCollapsed ? "lg:grid-cols-[64px_1fr]" : "lg:grid-cols-[232px_1fr]")}>
       <aside className={cn("sticky top-0 hidden h-screen border-r border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur lg:block", sidebarCollapsed ? "p-3" : "p-4")}>
         <div className={cn("mb-6 flex items-center", sidebarCollapsed ? "justify-center" : "gap-3 px-2")}>
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--foreground)] bg-[var(--foreground)] text-lg font-black text-[var(--background)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--foreground)] bg-[var(--foreground)] text-base font-black text-[var(--background)]">
             LL
           </div>
           {!sidebarCollapsed && (
@@ -196,7 +196,7 @@ export function WorkspaceShell({
       </aside>
 
       <main className="min-w-0 pb-24 lg:pb-0">
-        <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--background)]/88 px-3 py-2.5 backdrop-blur md:px-5">
+        <header className="sticky top-0 z-30 min-h-16 border-b border-[var(--border)] bg-[var(--background)]/88 px-3 py-2.5 backdrop-blur md:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase text-[var(--muted)]">Lucky List</p>
@@ -233,7 +233,7 @@ export function WorkspaceShell({
           </div>
         </header>
 
-        <div className="mx-auto grid max-w-none gap-4 p-3 md:p-4 xl:p-5">{children}</div>
+        <div className={cn("mx-auto grid w-full gap-3 p-3 md:p-4", activeView === "board" || activeView === "calendar" ? "max-w-none xl:p-4" : "max-w-[1440px] xl:p-5")}>{children}</div>
       </main>
     </div>
   );

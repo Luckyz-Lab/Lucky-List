@@ -28,6 +28,7 @@ export interface Task {
   notes?: string;
   category?: string;
   priority: TaskPriority;
+  estimateMinutes?: number;
   progress: number;
   boardState: BoardState;
   startDate?: string | null;
@@ -60,6 +61,7 @@ export interface UserSettings {
   defaultReminderMode: DefaultReminderMode;
   dailyDigestEnabled: boolean;
   dailyDigestTime: string;
+  dailyCapacityMinutes?: number;
   autoBackupMinutes: number;
   lastSyncedAt?: string | null;
   updatedAt: string;
